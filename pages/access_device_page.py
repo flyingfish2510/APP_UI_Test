@@ -79,20 +79,17 @@ class AccessDevicePage(BasePage):
         return False
 
     @log_step("点击编辑名称按钮")
-    @timeout(15)
     def click_edit_name_button(self, timeout: int = 10) -> bool:
         """点击编辑名称按钮"""
         return self.click(self.EDIT_NAME_BUTTON, timeout=timeout)
 
     @log_step("输入新名称")
-    @timeout(15)
     def input_new_name(self, name: str, timeout: int = 10) -> bool:
         """输入新名称"""
         self.logger.info(f"输入新名称: {name}")
         return self.input_text(self.NAME_INPUT, name, clear_first=True, timeout=timeout)
 
     @log_step("点击确认按钮")
-    @timeout(15)
     def click_confirm_button(self, timeout: int = 10) -> bool:
         """点击确认按钮"""
         return self.click(self.CONFIRM_BUTTON, timeout=timeout)

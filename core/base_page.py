@@ -38,7 +38,7 @@ logger = get_logger(__name__)
 
 
 def log_step(step_name: str):
-    """步骤装饰器"""
+    """步骤装饰器，同时在日志和Allure报告中体现"""
     def decorator(func):
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
@@ -144,11 +144,11 @@ class BasePage:
             logger.error(f"加载配置文件失败: {config_path}")
             return {}
 
-    @timeout(30)
     @handle_exceptions(default_error_code="ELEMENT_FIND_ERROR")
     @allure.step("查找元素: {locator}")
     def find_element(self, locator: Tuple[str, str], timeout: Optional[int] = None,
                      condition=EC.visibility_of_element_located) -> WebElement:
+        """查找单个元素，使用显式等待"""
         timeout = timeout or self.timeout
         try:
             element = WebDriverWait(self.driver, timeout).until(condition(locator))
@@ -165,6 +165,7 @@ class BasePage:
 
     @allure.step("查找多个元素: {locator}")
     def find_elements(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> List[WebElement]:
+        """查找多个元素"""
         timeout = timeout or self.timeout
         try:
             elements = WebDriverWait(self.driver, timeout).until(EC.presence_of_all_elements_located(locator))
@@ -177,11 +178,11 @@ class BasePage:
             self.logger.error(f"查找多个元素异常: {e}")
             return []
 
-    @timeout(30)
     @retry_on_failure(max_attempts=3, delay=1.0)
     @handle_exceptions(default_error_code="ELEMENT_CLICK_ERROR")
     @allure.step("点击元素: {locator}")
     def click(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> bool:
+        """点击元素"""
         timeout = timeout or self.timeout
         try:
             element = WebDriverWait(self.driver, timeout).until(EC.element_to_be_clickable(locator))
@@ -203,11 +204,11 @@ class BasePage:
             except (TimeoutException, StaleElementReferenceException):
                 raise ElementStaleError(locator=locator, page_name=self.__class__.__name__)
 
-    @timeout(30)
     @retry_on_failure(max_attempts=3, delay=0.5)
     @allure.step("输入文本到元素: {locator}")
     def input_text(self, locator: Tuple[str, str], text: str,
                    clear_first: bool = True, timeout: Optional[int] = None) -> bool:
+        """输入文本"""
         timeout = timeout or self.timeout
         try:
             element = self.find_element(locator, timeout)
@@ -224,10 +225,10 @@ class BasePage:
             self._take_screenshot(f"input_failed_{locator[1].replace('/', '_')}")
             return False
 
-    @timeout(20)
     @retry_on_failure(max_attempts=2, delay=0.5)
     @allure.step("获取元素文本: {locator}")
     def get_text(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> str:
+        """获取元素文本"""
         timeout = timeout or self.timeout
         try:
             element = self.find_element(locator, timeout)
@@ -241,11 +242,11 @@ class BasePage:
             self.logger.error(f"获取文本失败: {e}")
             return ""
 
-    @timeout(20)
     @retry_on_failure(max_attempts=2, delay=0.5)
     @allure.step("获取元素属性 {attribute}: {locator}")
     def get_attribute(self, locator: Tuple[str, str], attribute: str,
                       timeout: Optional[int] = None) -> str:
+        """获取元素属性"""
         timeout = timeout or self.timeout
         try:
             element = self.find_element(locator, timeout)
@@ -260,6 +261,7 @@ class BasePage:
             return ""
 
     def is_element_present(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> bool:
+        """判断元素是否存在"""
         timeout = timeout or min(self.timeout, 5)
         try:
             self.find_element(locator, timeout, EC.presence_of_element_located)
@@ -268,6 +270,7 @@ class BasePage:
             return False
 
     def is_element_visible(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> bool:
+        """判断元素是否可见"""
         timeout = timeout or min(self.timeout, 5)
         try:
             self.find_element(locator, timeout, EC.visibility_of_element_located)
@@ -275,10 +278,10 @@ class BasePage:
         except (ElementNotFoundError, ElementNotVisibleError, WebDriverException):
             return False
 
-    @timeout(30)
     @allure.step("等待元素消失: {locator}")
     def wait_for_element_disappear(self, locator: Tuple[str, str],
                                    timeout: Optional[int] = None) -> bool:
+        """等待元素消失"""
         timeout = timeout or self.timeout
         try:
             WebDriverWait(self.driver, timeout).until(EC.invisibility_of_element_located(locator))
@@ -291,9 +294,9 @@ class BasePage:
             self.logger.error(f"等待元素消失异常: {e}")
             return False
 
-    @timeout(60)
     @allure.step("滚动查找元素: {locator}")
     def scroll_to_element(self, locator: Tuple[str, str], max_scrolls: int = 10) -> bool:
+        """滚动查找元素"""
         for i in range(max_scrolls):
             if self.is_element_visible(locator, timeout=2):
                 self.logger.info(f"滚动找到元素: {locator}")
@@ -343,13 +346,11 @@ class BasePage:
         self.driver.swipe(start_x, start_y, end_x, start_y, duration)
         self.logger.debug("执行向右滑动")
 
-    @timeout(10)
     @allure.step("返回上一页")
     def go_back(self):
         self.driver.back()
         self.logger.debug("执行返回操作")
 
-    @timeout(15)
     @allure.step("返回主屏幕")
     def go_home(self) -> bool:
         return self.device.go_home()
