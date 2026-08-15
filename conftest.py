@@ -6,6 +6,7 @@ Pytest配置文件（根目录版本）
 import os
 import sys
 import json
+import shutil
 import pytest
 import time
 import psutil
@@ -41,10 +42,12 @@ from pages.access_device_page import AccessDevicePage
 
 logger = get_logger(__name__)
 
+HISTORY_DIR = os.path.join(project_root, 'reports', 'history')
+
 
 def pytest_configure(config: Config):
     """Pytest配置钩子"""
-    dirs_to_create = ['screenshots', 'reports/allure-results', 'logs']
+    dirs_to_create = ['screenshots', 'reports/allure-results', 'reports/history', 'logs']
     for dir_path in dirs_to_create:
         Utils.ensure_dir(os.path.join(project_root, dir_path))
 
@@ -54,6 +57,150 @@ def pytest_configure(config: Config):
     config.addinivalue_line("markers", "p1: 优先级P1")
     config.addinivalue_line("markers", "p2: 优先级P2")
     config.addinivalue_line("markers", "p3: 优先级P3")
+
+
+def _restore_history(allure_dir: str):
+    """
+    恢复历史趋势数据到 allure-results
+
+    将 reports/history/ 中的趋势数据复制到 allure-results/，
+    使 Allure 报告展示趋势对比。
+    """
+    trend_files = [
+        'history.json',
+        'history-trend.json',
+        'duration-trend.json',
+        'retry-trend.json',
+        'categories-trend.json'
+    ]
+
+    for filename in trend_files:
+        source = os.path.join(HISTORY_DIR, filename)
+        if os.path.exists(source):
+            target = os.path.join(allure_dir, filename)
+            shutil.copy2(source, target)
+            logger.debug(f"已恢复趋势数据: {filename}")
+
+
+def _load_json(file_path: str) -> list:
+    """安全加载 JSON 文件，失败返回空列表"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError, FileNotFoundError):
+        return []
+
+
+def _save_json(file_path: str, data: list):
+    """安全保存 JSON 文件"""
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except IOError as e:
+        logger.error(f"保存趋势数据失败: {e}")
+
+
+def _save_history(session, exitstatus):
+    """
+    保存本次测试结果到历史趋势数据
+
+    更新以下文件（保留最近 100 条记录）：
+    - history.json：测试结果历史
+    - history-trend.json：通过/失败趋势
+    - duration-trend.json：耗时趋势
+    - retry-trend.json：重试趋势
+    - categories-trend.json：分类趋势
+    """
+    Utils.ensure_dir(HISTORY_DIR)
+
+    build_name = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # 统计测试结果
+    total = 0
+    passed = 0
+    failed = 0
+    skipped = 0
+    broken = 0
+    duration = 0.0
+    retry_count = 0
+
+    for item in session.items:
+        total += 1
+        retry_count += getattr(item, 'execution_count', 0)
+
+        if hasattr(item, 'rep_call'):
+            rep = item.rep_call
+            if rep.passed:
+                passed += 1
+            elif rep.failed:
+                failed += 1
+            elif rep.skipped:
+                skipped += 1
+
+            if hasattr(rep, 'duration'):
+                duration += rep.duration
+
+    # 1. history.json
+    history_file = os.path.join(HISTORY_DIR, 'history.json')
+    history = _load_json(history_file)
+    history.append({
+        'timestamp': timestamp,
+        'buildName': f"Build_{build_name}",
+        'total': total,
+        'passed': passed,
+        'failed': failed,
+        'skipped': skipped,
+        'broken': broken,
+        'exitStatus': exitstatus,
+        'duration': round(duration, 2)
+    })
+    _save_json(history_file, history[-100:])
+
+    # 2. history-trend.json
+    trend_file = os.path.join(HISTORY_DIR, 'history-trend.json')
+    trend = _load_json(trend_file)
+    trend.append({
+        'buildName': f"Build_{build_name}",
+        'passed': passed,
+        'failed': failed,
+        'skipped': skipped,
+        'broken': broken,
+        'total': total
+    })
+    _save_json(trend_file, trend[-100:])
+
+    # 3. duration-trend.json
+    duration_file = os.path.join(HISTORY_DIR, 'duration-trend.json')
+    duration_trend = _load_json(duration_file)
+    duration_trend.append({
+        'buildName': f"Build_{build_name}",
+        'duration': round(duration, 2)
+    })
+    _save_json(duration_file, duration_trend[-100:])
+
+    # 4. retry-trend.json
+    retry_file = os.path.join(HISTORY_DIR, 'retry-trend.json')
+    retry_trend = _load_json(retry_file)
+    retry_trend.append({
+        'buildName': f"Build_{build_name}",
+        'retries': retry_count
+    })
+    _save_json(retry_file, retry_trend[-100:])
+
+    # 5. categories-trend.json
+    categories_file = os.path.join(HISTORY_DIR, 'categories-trend.json')
+    categories_trend = _load_json(categories_file)
+    categories_trend.append({
+        'buildName': f"Build_{build_name}",
+        'passed': passed,
+        'failed': failed,
+        'skipped': skipped,
+        'broken': broken
+    })
+    _save_json(categories_file, categories_trend[-100:])
+
+    logger.info(f"历史趋势数据已保存: {HISTORY_DIR}")
 
 
 def pytest_sessionstart(session):
@@ -114,6 +261,9 @@ def pytest_sessionstart(session):
     with open(categories_path, 'w', encoding='utf-8') as f:
         json.dump(categories, f, ensure_ascii=False, indent=2)
 
+    # 恢复历史趋势数据
+    _restore_history(allure_dir)
+
     if driver_manager.run_env == 'local':
         try:
             driver_manager.start_appium_service()
@@ -130,6 +280,9 @@ def pytest_sessionfinish(session, exitstatus):
     exception_summary = global_exception_handler.get_exception_summary()
     if exception_summary['total_exceptions'] > 0:
         logger.info(f"异常总数: {exception_summary['total_exceptions']}")
+
+    # 保存历史趋势数据
+    _save_history(session, exitstatus)
 
     logger.info("=" * 60)
 
@@ -234,12 +387,7 @@ def manage_smarthome_app(driver):
 
 @pytest.fixture(autouse=True)
 def performance_monitor(request):
-    """
-    性能监控 fixture
-
-    采集每个用例的执行时间、CPU 使用率和内存使用率，
-    并附加到 Allure 报告中。
-    """
+    """性能监控 fixture"""
     start_time = time.time()
     start_cpu = psutil.cpu_percent(interval=None)
     start_mem = psutil.virtual_memory().percent
@@ -278,11 +426,10 @@ def pytest_runtest_makereport(item, call):
     report = outcome.get_result()
 
     if report.when == "call":
+        item.rep_call = report
         rerun_count = getattr(item, 'execution_count', 0)
         if rerun_count > 0:
-            allure.dynamic.description(
-                f"Retry: {rerun_count} time(s)"
-            )
+            allure.dynamic.description(f"Retry: {rerun_count} time(s)")
 
         if report.failed:
             driver = item.funcargs.get('driver') if hasattr(item, 'funcargs') else None
