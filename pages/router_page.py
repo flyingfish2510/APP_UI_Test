@@ -4,7 +4,7 @@
 
 from appium.webdriver.common.appiumby import AppiumBy
 from time import sleep
-from core.base_page import BasePage, log_step, timeout
+from core.base_page import BasePage, log_step, method_timeout
 from core.logger import get_logger
 from core.exceptions import ElementNotFoundError
 
@@ -28,8 +28,8 @@ class RouterPage(BasePage):
         self.logger = get_logger(self.__class__.__name__)
 
     @log_step("进入设备页面")
-    @timeout(15)
-    def enter_device_page(self, use_xpath: bool = False, timeout: int = 10) -> bool:
+    @method_timeout(15)
+    def enter_device_page(self, use_xpath: bool = False, wait_timeout: int = 10) -> bool:
         """点击进入设备页面"""
         self.logger.info("进入设备页面...")
 
@@ -39,14 +39,14 @@ class RouterPage(BasePage):
             return self.click_by_coordinate(*self.DEVICE_COORDINATE)
 
         try:
-            if self.is_element_present(self.DEVICE_ENTRY, timeout=timeout):
-                return self.click(self.DEVICE_ENTRY, timeout=timeout)
+            if self.is_element_present(self.DEVICE_ENTRY, wait_timeout=wait_timeout):
+                return self.click(self.DEVICE_ENTRY, wait_timeout=wait_timeout)
         except ElementNotFoundError:
             pass
 
         try:
-            if self.is_element_present(self.DEVICE_ENTRY_CONTAINS, timeout=timeout):
-                return self.click(self.DEVICE_ENTRY_CONTAINS, timeout=timeout)
+            if self.is_element_present(self.DEVICE_ENTRY_CONTAINS, wait_timeout=wait_timeout):
+                return self.click(self.DEVICE_ENTRY_CONTAINS, wait_timeout=wait_timeout)
         except ElementNotFoundError:
             pass
 
@@ -55,8 +55,8 @@ class RouterPage(BasePage):
         return self.click_by_coordinate(*self.DEVICE_COORDINATE)
 
     @log_step("进入接入设备页面")
-    @timeout(15)
-    def enter_access_device_page(self, use_xpath: bool = False, timeout: int = 10) -> bool:
+    @method_timeout(15)
+    def enter_access_device_page(self, use_xpath: bool = False, wait_timeout: int = 10) -> bool:
         """点击进入接入设备页面"""
         self.logger.info("进入接入设备页面...")
 
@@ -66,14 +66,14 @@ class RouterPage(BasePage):
             return self.click_by_coordinate(*self.ACCESS_DEVICE_COORDINATE)
 
         try:
-            if self.is_element_present(self.ACCESS_DEVICE_ENTRY, timeout=timeout):
-                return self.click(self.ACCESS_DEVICE_ENTRY, timeout=timeout)
+            if self.is_element_present(self.ACCESS_DEVICE_ENTRY, wait_timeout=wait_timeout):
+                return self.click(self.ACCESS_DEVICE_ENTRY, wait_timeout=wait_timeout)
         except ElementNotFoundError:
             pass
 
         try:
-            if self.is_element_present(self.ACCESS_DEVICE_ENTRY_CONTAINS, timeout=timeout):
-                return self.click(self.ACCESS_DEVICE_ENTRY_CONTAINS, timeout=timeout)
+            if self.is_element_present(self.ACCESS_DEVICE_ENTRY_CONTAINS, wait_timeout=wait_timeout):
+                return self.click(self.ACCESS_DEVICE_ENTRY_CONTAINS, wait_timeout=wait_timeout)
         except ElementNotFoundError:
             pass
 
