@@ -4,7 +4,7 @@
 
 from appium.webdriver.common.appiumby import AppiumBy
 from time import sleep
-from core.base_page import BasePage, log_step
+from core.base_page import BasePage, log_step, timeout
 from core.logger import get_logger
 from core.exceptions import ElementNotFoundError
 
@@ -12,9 +12,7 @@ logger = get_logger(__name__)
 
 
 class RouterPage(BasePage):
-    """
-    路由器设备页面对象
-    """
+    """路由器设备页面对象"""
 
     DEVICE_ENTRY = (AppiumBy.XPATH, "//android.widget.TextView[@text='设备']")
     DEVICE_ENTRY_CONTAINS = (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, '设备')]")
@@ -29,15 +27,9 @@ class RouterPage(BasePage):
         super().__init__(driver)
         self.logger = get_logger(self.__class__.__name__)
 
+    @timeout(15)
     @log_step("进入设备页面")
     def enter_device_page(self, use_xpath: bool = False, timeout: int = 10) -> bool:
-        """
-        点击进入设备页面
-
-        Args:
-            use_xpath: False 使用相对坐标，True 使用 XPath 定位
-            timeout: 超时时间（秒）
-        """
         self.logger.info("进入设备页面...")
 
         if not use_xpath:
@@ -61,15 +53,9 @@ class RouterPage(BasePage):
         sleep(3)
         return self.click_by_coordinate(*self.DEVICE_COORDINATE)
 
+    @timeout(15)
     @log_step("进入接入设备页面")
     def enter_access_device_page(self, use_xpath: bool = False, timeout: int = 10) -> bool:
-        """
-        点击进入接入设备页面
-
-        Args:
-            use_xpath: False 使用相对坐标，True 使用 XPath 定位
-            timeout: 超时时间（秒）
-        """
         self.logger.info("进入接入设备页面...")
 
         if not use_xpath:

@@ -38,12 +38,7 @@ logger = get_logger(__name__)
 
 
 def log_step(step_name: str):
-    """
-    步骤装饰器，同时在日志和Allure报告中体现
-
-    Args:
-        step_name: 步骤描述
-    """
+    """步骤装饰器"""
     def decorator(func):
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
@@ -56,15 +51,7 @@ def log_step(step_name: str):
 
 
 def retry_on_failure(max_attempts: int = 3, delay: float = 1.0):
-    """
-    元素操作重试装饰器
-
-    当元素操作失败时自动重试，适用于元素过时、未加载等场景。
-
-    Args:
-        max_attempts: 最大尝试次数
-        delay: 重试间隔（秒），每次重试递增
-    """
+    """元素操作重试装饰器"""
     def decorator(func):
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
@@ -88,20 +75,42 @@ def retry_on_failure(max_attempts: int = 3, delay: float = 1.0):
     return decorator
 
 
-class BasePage:
-    """
-    页面基类
+def timeout(seconds: int):
+    """方法级超时装饰器"""
+    import threading
 
-    所有 Page Object 类都应继承此类，提供统一的：
-    - 元素查找：find_element / find_elements
-    - 元素操作：click / input_text / get_text / get_attribute
-    - 等待机制：显式等待、元素消失等待
-    - 滑动操作：swipe_up / swipe_down / swipe_left / swipe_right
-    - 导航操作：go_back / go_home
-    - 截图功能：take_screenshot
-    - 设备操作：device 属性
-    - 断言工具：assert_that 属性
-    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            result = []
+            exception = []
+
+            def target():
+                try:
+                    result.append(func(self, *args, **kwargs))
+                except Exception as e:
+                    exception.append(e)
+
+            thread = threading.Thread(target=target)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=seconds)
+
+            if thread.is_alive():
+                self.logger.error(f"方法 {func.__name__} 执行超时 ({seconds}s)")
+                self._take_screenshot(f"timeout_{func.__name__}")
+                raise TimeoutError(f"方法 {func.__name__} 执行超时 ({seconds}s)")
+
+            if exception:
+                raise exception[0]
+
+            return result[0] if result else None
+        return wrapper
+    return decorator
+
+
+class BasePage:
+    """页面基类"""
 
     def __init__(self, driver, config_path: str = "config/config.yaml"):
         self.driver = driver
@@ -115,20 +124,17 @@ class BasePage:
 
     @property
     def device(self) -> DeviceOperations:
-        """获取设备操作实例（懒加载）"""
         if self._device_ops is None:
             self._device_ops = DeviceOperations(self.driver)
         return self._device_ops
 
     @property
     def assert_that(self):
-        """获取断言工具实例"""
         from core.assertions import Assertions
         return Assertions(self)
 
     @staticmethod
     def _load_config(config_path: str) -> dict:
-        """加载 YAML 配置文件"""
         import yaml
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -138,11 +144,11 @@ class BasePage:
             logger.error(f"加载配置文件失败: {config_path}")
             return {}
 
+    @timeout(30)
     @handle_exceptions(default_error_code="ELEMENT_FIND_ERROR")
     @allure.step("查找元素: {locator}")
     def find_element(self, locator: Tuple[str, str], timeout: Optional[int] = None,
                      condition=EC.visibility_of_element_located) -> WebElement:
-        """查找单个元素，使用显式等待"""
         timeout = timeout or self.timeout
         try:
             element = WebDriverWait(self.driver, timeout).until(condition(locator))
@@ -159,7 +165,6 @@ class BasePage:
 
     @allure.step("查找多个元素: {locator}")
     def find_elements(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> List[WebElement]:
-        """查找多个元素"""
         timeout = timeout or self.timeout
         try:
             elements = WebDriverWait(self.driver, timeout).until(EC.presence_of_all_elements_located(locator))
@@ -172,11 +177,11 @@ class BasePage:
             self.logger.error(f"查找多个元素异常: {e}")
             return []
 
+    @timeout(30)
     @retry_on_failure(max_attempts=3, delay=1.0)
     @handle_exceptions(default_error_code="ELEMENT_CLICK_ERROR")
     @allure.step("点击元素: {locator}")
     def click(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> bool:
-        """点击元素"""
         timeout = timeout or self.timeout
         try:
             element = WebDriverWait(self.driver, timeout).until(EC.element_to_be_clickable(locator))
@@ -198,11 +203,11 @@ class BasePage:
             except (TimeoutException, StaleElementReferenceException):
                 raise ElementStaleError(locator=locator, page_name=self.__class__.__name__)
 
+    @timeout(30)
     @retry_on_failure(max_attempts=3, delay=0.5)
     @allure.step("输入文本到元素: {locator}")
     def input_text(self, locator: Tuple[str, str], text: str,
                    clear_first: bool = True, timeout: Optional[int] = None) -> bool:
-        """输入文本"""
         timeout = timeout or self.timeout
         try:
             element = self.find_element(locator, timeout)
@@ -219,10 +224,10 @@ class BasePage:
             self._take_screenshot(f"input_failed_{locator[1].replace('/', '_')}")
             return False
 
+    @timeout(20)
     @retry_on_failure(max_attempts=2, delay=0.5)
     @allure.step("获取元素文本: {locator}")
     def get_text(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> str:
-        """获取元素文本"""
         timeout = timeout or self.timeout
         try:
             element = self.find_element(locator, timeout)
@@ -236,11 +241,11 @@ class BasePage:
             self.logger.error(f"获取文本失败: {e}")
             return ""
 
+    @timeout(20)
     @retry_on_failure(max_attempts=2, delay=0.5)
     @allure.step("获取元素属性 {attribute}: {locator}")
     def get_attribute(self, locator: Tuple[str, str], attribute: str,
                       timeout: Optional[int] = None) -> str:
-        """获取元素属性"""
         timeout = timeout or self.timeout
         try:
             element = self.find_element(locator, timeout)
@@ -255,7 +260,6 @@ class BasePage:
             return ""
 
     def is_element_present(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> bool:
-        """判断元素是否存在"""
         timeout = timeout or min(self.timeout, 5)
         try:
             self.find_element(locator, timeout, EC.presence_of_element_located)
@@ -264,7 +268,6 @@ class BasePage:
             return False
 
     def is_element_visible(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> bool:
-        """判断元素是否可见"""
         timeout = timeout or min(self.timeout, 5)
         try:
             self.find_element(locator, timeout, EC.visibility_of_element_located)
@@ -272,10 +275,10 @@ class BasePage:
         except (ElementNotFoundError, ElementNotVisibleError, WebDriverException):
             return False
 
+    @timeout(30)
     @allure.step("等待元素消失: {locator}")
     def wait_for_element_disappear(self, locator: Tuple[str, str],
                                    timeout: Optional[int] = None) -> bool:
-        """等待元素消失"""
         timeout = timeout or self.timeout
         try:
             WebDriverWait(self.driver, timeout).until(EC.invisibility_of_element_located(locator))
@@ -288,9 +291,9 @@ class BasePage:
             self.logger.error(f"等待元素消失异常: {e}")
             return False
 
+    @timeout(60)
     @allure.step("滚动查找元素: {locator}")
     def scroll_to_element(self, locator: Tuple[str, str], max_scrolls: int = 10) -> bool:
-        """滚动查找元素"""
         for i in range(max_scrolls):
             if self.is_element_visible(locator, timeout=2):
                 self.logger.info(f"滚动找到元素: {locator}")
@@ -306,7 +309,6 @@ class BasePage:
 
     @allure.step("向上滑动")
     def swipe_up(self, duration: int = 800):
-        """向上滑动"""
         size = self.driver.get_window_size()
         start_x = size['width'] // 2
         start_y = int(size['height'] * 0.8)
@@ -316,7 +318,6 @@ class BasePage:
 
     @allure.step("向下滑动")
     def swipe_down(self, duration: int = 800):
-        """向下滑动"""
         size = self.driver.get_window_size()
         start_x = size['width'] // 2
         start_y = int(size['height'] * 0.2)
@@ -326,7 +327,6 @@ class BasePage:
 
     @allure.step("向左滑动")
     def swipe_left(self, duration: int = 800):
-        """向左滑动"""
         size = self.driver.get_window_size()
         start_x = int(size['width'] * 0.8)
         start_y = size['height'] // 2
@@ -336,7 +336,6 @@ class BasePage:
 
     @allure.step("向右滑动")
     def swipe_right(self, duration: int = 800):
-        """向右滑动"""
         size = self.driver.get_window_size()
         start_x = int(size['width'] * 0.2)
         start_y = size['height'] // 2
@@ -344,20 +343,19 @@ class BasePage:
         self.driver.swipe(start_x, start_y, end_x, start_y, duration)
         self.logger.debug("执行向右滑动")
 
+    @timeout(10)
     @allure.step("返回上一页")
     def go_back(self):
-        """返回上一页"""
         self.driver.back()
         self.logger.debug("执行返回操作")
 
+    @timeout(15)
     @allure.step("返回主屏幕")
     def go_home(self) -> bool:
-        """返回设备主屏幕"""
         return self.device.go_home()
 
     @allure.step("点击相对坐标: ({x_ratio}, {y_ratio})")
     def click_by_coordinate(self, x_ratio: float, y_ratio: float) -> bool:
-        """根据相对坐标点击屏幕"""
         try:
             size = self.driver.get_window_size()
             x = int(size['width'] * x_ratio)
@@ -372,7 +370,6 @@ class BasePage:
 
     @allure.step("长按相对坐标: ({x_ratio}, {y_ratio})")
     def long_press_by_coordinate(self, x_ratio: float, y_ratio: float, duration: int = 1000) -> bool:
-        """根据相对坐标长按屏幕"""
         try:
             size = self.driver.get_window_size()
             x = int(size['width'] * x_ratio)
@@ -388,7 +385,6 @@ class BasePage:
     def swipe_by_coordinates(self, start_x_ratio: float, start_y_ratio: float,
                              end_x_ratio: float, end_y_ratio: float,
                              duration: int = 800) -> bool:
-        """根据相对坐标滑动"""
         try:
             size = self.driver.get_window_size()
             start_x = int(size['width'] * start_x_ratio)
@@ -403,7 +399,6 @@ class BasePage:
             return False
 
     def _take_screenshot(self, name: str = None) -> Optional[str]:
-        """内部截图方法"""
         if not self.screenshot_config.get('on_failure', True):
             return None
         filepath = None
@@ -425,19 +420,16 @@ class BasePage:
 
     @allure.step("截图: {name}")
     def take_screenshot(self, name: str = None) -> Optional[str]:
-        """公开的截图方法"""
         try:
             return self._take_screenshot(name)
         except ScreenshotSaveError:
             return None
 
     def wait_for_page_load(self, timeout: int = 15):
-        """等待页面加载完成（子类应重写此方法）"""
         self.logger.info(f"等待{self.__class__.__name__}页面加载...")
 
     @allure.step("处理弹窗")
     def handle_alert(self, accept: bool = True, timeout: int = 5) -> bool:
-        """处理系统弹窗"""
         try:
             alert = WebDriverWait(self.driver, timeout).until(EC.alert_is_present())
             if accept:

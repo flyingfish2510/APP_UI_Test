@@ -21,7 +21,6 @@ class Test03:
 
     @pytest.fixture
     def setup(self, smarthome_page, router_page, access_device_page):
-        """前置和后置处理"""
         self.smarthome_page = smarthome_page
         self.router_page = router_page
         self.access_device_page = access_device_page
@@ -57,14 +56,13 @@ class Test03:
     @allure.description("验证路由器接入设备名称修改功能")
     @allure.severity(allure.severity_level.CRITICAL)
     def test03(self, setup):
-        """测试用例：修改路由器接入设备名称"""
         self.router_page.assert_that.true(
-            self.router_page.enter_device_page(),
+            self.router_page.enter_device_page(use_xpath=False),
             "进入设备页面失败"
         )
 
         self.router_page.assert_that.true(
-            self.router_page.enter_access_device_page(),
+            self.router_page.enter_access_device_page(use_xpath=False),
             "进入接入设备页面失败"
         )
 

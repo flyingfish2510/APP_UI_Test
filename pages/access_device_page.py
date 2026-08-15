@@ -3,7 +3,7 @@
 """
 
 from appium.webdriver.common.appiumby import AppiumBy
-from core.base_page import BasePage, log_step
+from core.base_page import BasePage, log_step, timeout
 from core.logger import get_logger
 from core.exceptions import ElementNotFoundError
 
@@ -11,9 +11,7 @@ logger = get_logger(__name__)
 
 
 class AccessDevicePage(BasePage):
-    """
-    接入设备页面对象
-    """
+    """接入设备页面对象"""
 
     ONLINE_DEVICE_TAB = (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, '在线设备')]")
     OFFLINE_DEVICE_TAB = (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, '离线设备')]")
@@ -33,33 +31,33 @@ class AccessDevicePage(BasePage):
         super().__init__(driver)
         self.logger = get_logger(self.__class__.__name__)
 
+    @timeout(15)
     @log_step("进入在线设备页面")
     def enter_online_devices(self, timeout: int = 10) -> bool:
-        """进入在线设备页面"""
         return self.click(self.ONLINE_DEVICE_TAB, timeout=timeout)
 
+    @timeout(15)
     @log_step("进入离线设备页面")
     def enter_offline_devices(self, timeout: int = 10) -> bool:
-        """进入离线设备页面"""
         return self.click(self.OFFLINE_DEVICE_TAB, timeout=timeout)
 
+    @timeout(15)
     @log_step("进入黑名单设备页面")
     def enter_blacklist_devices(self, timeout: int = 10) -> bool:
-        """进入黑名单设备页面"""
         return self.click(self.BLACKLIST_DEVICE_TAB, timeout=timeout)
 
+    @timeout(20)
     @log_step("获取设备名称")
     def get_device_name(self, timeout: int = 10) -> str:
-        """获取设备名称"""
         try:
             return self.get_text(self.DEVICE_NAME, timeout=timeout)
         except ElementNotFoundError:
             self.logger.error("未找到设备名称元素")
             return ""
 
+    @timeout(20)
     @log_step("进入指定设备管理页面")
     def enter_device_by_name(self, device_name: str, timeout: int = 10) -> bool:
-        """进入指定名称的设备管理页面"""
         self.logger.info(f"进入设备管理页面: {device_name}")
 
         locators = [
@@ -75,25 +73,25 @@ class AccessDevicePage(BasePage):
         self._take_screenshot(f"device_not_found_{device_name}")
         return False
 
+    @timeout(15)
     @log_step("点击编辑名称按钮")
     def click_edit_name_button(self, timeout: int = 10) -> bool:
-        """点击编辑名称按钮"""
         return self.click(self.EDIT_NAME_BUTTON, timeout=timeout)
 
+    @timeout(15)
     @log_step("输入新名称")
     def input_new_name(self, name: str, timeout: int = 10) -> bool:
-        """输入新名称"""
         self.logger.info(f"输入新名称: {name}")
         return self.input_text(self.NAME_INPUT, name, clear_first=True, timeout=timeout)
 
+    @timeout(15)
     @log_step("点击确认按钮")
     def click_confirm_button(self, timeout: int = 10) -> bool:
-        """点击确认按钮"""
         return self.click(self.CONFIRM_BUTTON, timeout=timeout)
 
+    @timeout(60)
     @log_step("修改设备名称")
     def modify_device_name(self, new_name: str) -> bool:
-        """修改设备名称"""
         self.logger.info(f"修改设备名称为: {new_name}")
 
         if not self.click_edit_name_button():

@@ -59,12 +59,12 @@ class Test01:
     def test01(self, setup):
         """测试用例：修改路由器接入设备名称"""
         self.router_page.assert_that.true(
-            self.router_page.enter_device_page(),
+            self.router_page.enter_device_page(use_xpath=False),
             "进入设备页面失败"
         )
 
         self.router_page.assert_that.true(
-            self.router_page.enter_access_device_page(),
+            self.router_page.enter_access_device_page(use_xpath=False),
             "进入接入设备页面失败"
         )
 

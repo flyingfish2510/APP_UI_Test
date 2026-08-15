@@ -12,11 +12,10 @@ class ConfigValidator:
     """
     配置校验器
 
-    校验 YAML 配置文件的必要字段是否完整。
-    缺失字段时记录警告，不影响框架启动（使用默认值）。
+    校验 YAML 和 XML 配置文件的必要字段是否完整。
+    缺失字段时记录警告，不影响框架启动。
     """
 
-    # 必要字段定义：{配置段: [必要键]}
     YAML_REQUIRED_KEYS = {
         'appium': ['local_host', 'docker_host'],
         'timeout': ['implicit_wait', 'explicit_wait', 'page_load_timeout'],
@@ -27,7 +26,6 @@ class ConfigValidator:
         'device_management': ['device_config_file'],
     }
 
-    # XML 必要字段
     XML_REQUIRED_KEYS = {
         'app': ['package'],
         'page_load': ['home_tab_name', 'timeout'],
@@ -42,7 +40,7 @@ class ConfigValidator:
             config: YAML 配置字典
 
         Returns:
-            bool: 是否存在缺失字段（True=完整，False=有缺失）
+            bool: True=完整，False=有缺失
         """
         if not config:
             logger.warning("YAML 配置为空")
@@ -78,7 +76,7 @@ class ConfigValidator:
             config: XML 配置字典（xmltodict 解析结果）
 
         Returns:
-            bool: 是否存在缺失字段
+            bool: True=完整，False=有缺失
         """
         if not config:
             logger.warning("XML 配置为空")
@@ -99,13 +97,10 @@ class ConfigValidator:
                     logger.warning(f"XML 配置 {section}.{key} 缺失")
                     missing_count += 1
 
-        # 可选字段
         if 'default_device' not in root:
             logger.debug("XML 配置未设置 default_device（可选）")
-
         if 'test_data' not in root:
             logger.debug("XML 配置未设置 test_data（可选）")
-
         if 'navigation' not in root:
             logger.debug("XML 配置未设置 navigation（可选）")
 
