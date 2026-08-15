@@ -5,6 +5,7 @@ Page Object基类（集成自定义异常版本和设备操作）
 """
 
 import os
+import time
 import functools
 from datetime import datetime
 from typing import Optional, Tuple, List
@@ -43,7 +44,6 @@ def log_step(step_name: str):
     Args:
         step_name: 步骤描述
     """
-
     def decorator(func):
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
@@ -51,9 +51,40 @@ def log_step(step_name: str):
             with allure.step(step_name):
                 result = func(self, *args, **kwargs)
             return result
-
         return wrapper
+    return decorator
 
+
+def retry_on_failure(max_attempts: int = 3, delay: float = 1.0):
+    """
+    元素操作重试装饰器
+
+    当元素操作失败时自动重试，适用于元素过时、未加载等场景。
+
+    Args:
+        max_attempts: 最大尝试次数
+        delay: 重试间隔（秒），每次重试递增
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            last_exception = None
+            for attempt in range(max_attempts):
+                try:
+                    return func(self, *args, **kwargs)
+                except (ElementStaleError, ElementNotClickableError, WebDriverException) as e:
+                    last_exception = e
+                    if attempt < max_attempts - 1:
+                        self.logger.warning(
+                            f"操作失败，重试 {attempt + 1}/{max_attempts - 1}: "
+                            f"{func.__name__} - {str(e)}"
+                        )
+                        time.sleep(delay * (attempt + 1))
+                    else:
+                        self.logger.error(f"操作最终失败: {func.__name__}")
+                        raise
+            raise last_exception
+        return wrapper
     return decorator
 
 
@@ -68,16 +99,8 @@ class BasePage:
     - 滑动操作：swipe_up / swipe_down / swipe_left / swipe_right
     - 导航操作：go_back / go_home
     - 截图功能：take_screenshot
-    - 异常处理：自动转换标准异常为自定义异常
-    - 设备操作：通过 device 属性获取 DeviceOperations 实例
-    - 断言工具：通过 assert_that 属性获取 Assertions 实例
-
-    Example:
-        >>> class LoginPage(BasePage):
-        ...     USERNAME = (AppiumBy.ACCESSIBILITY_ID, "username")
-        ...
-        ...     def enter_username(self, text):
-        ...         self.input_text(self.USERNAME, text)
+    - 设备操作：device 属性
+    - 断言工具：assert_that 属性
     """
 
     def __init__(self, driver, config_path: str = "config/config.yaml"):
@@ -149,6 +172,7 @@ class BasePage:
             self.logger.error(f"查找多个元素异常: {e}")
             return []
 
+    @retry_on_failure(max_attempts=3, delay=1.0)
     @handle_exceptions(default_error_code="ELEMENT_CLICK_ERROR")
     @allure.step("点击元素: {locator}")
     def click(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> bool:
@@ -174,6 +198,7 @@ class BasePage:
             except (TimeoutException, StaleElementReferenceException):
                 raise ElementStaleError(locator=locator, page_name=self.__class__.__name__)
 
+    @retry_on_failure(max_attempts=3, delay=0.5)
     @allure.step("输入文本到元素: {locator}")
     def input_text(self, locator: Tuple[str, str], text: str,
                    clear_first: bool = True, timeout: Optional[int] = None) -> bool:
@@ -194,6 +219,7 @@ class BasePage:
             self._take_screenshot(f"input_failed_{locator[1].replace('/', '_')}")
             return False
 
+    @retry_on_failure(max_attempts=2, delay=0.5)
     @allure.step("获取元素文本: {locator}")
     def get_text(self, locator: Tuple[str, str], timeout: Optional[int] = None) -> str:
         """获取元素文本"""
@@ -210,6 +236,7 @@ class BasePage:
             self.logger.error(f"获取文本失败: {e}")
             return ""
 
+    @retry_on_failure(max_attempts=2, delay=0.5)
     @allure.step("获取元素属性 {attribute}: {locator}")
     def get_attribute(self, locator: Tuple[str, str], attribute: str,
                       timeout: Optional[int] = None) -> str:
