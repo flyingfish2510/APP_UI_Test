@@ -7,6 +7,7 @@ Appium Driver管理器（集成自定义异常版本）
 import os
 import time
 import yaml
+import subprocess
 from typing import Dict, Optional, List
 import allure
 from appium import webdriver
@@ -39,7 +40,6 @@ class DriverManager:
         except ConfigFileNotFoundError:
             raise
 
-        # 校验配置
         ConfigValidator.validate_yaml(self.config)
 
         self.appium_service: Optional[AppiumService] = None
@@ -95,19 +95,112 @@ class DriverManager:
             return appium_config.get('local_host', 'http://127.0.0.1:4723')
 
     def _get_appium_host_port(self) -> tuple:
-        """
-        从 Appium URL 解析 host 和 port
-
-        Returns:
-            tuple: (host, port)
-        """
+        """从 Appium URL 解析 host 和 port"""
         appium_url = self._get_appium_url()
-        # 解析 http://127.0.0.1:4723 格式
         url_without_protocol = appium_url.replace('http://', '').replace('https://', '')
         parts = url_without_protocol.split(':')
         host = parts[0]
         port = int(parts[1]) if len(parts) > 1 else 4723
         return host, port
+
+    def _get_adb_devices(self) -> List[str]:
+        """
+        获取 ADB 已连接设备列表
+
+        Returns:
+            List[str]: 已连接的设备 UDID 列表
+        """
+        try:
+            result = subprocess.run(
+                ['adb', 'devices'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                logger.error(f"adb devices 命令执行失败: {result.stderr}")
+                return []
+
+            lines = result.stdout.strip().split('\n')[1:]
+            devices = []
+            for line in lines:
+                line = line.strip()
+                if line and '\t' in line:
+                    udid, status = line.split('\t')
+                    if status == 'device':
+                        devices.append(udid)
+            return devices
+        except FileNotFoundError:
+            logger.error("adb 未安装或不在 PATH 中")
+            return []
+        except subprocess.TimeoutExpired:
+            logger.error("adb devices 命令执行超时")
+            return []
+        except Exception as e:
+            logger.error(f"获取 ADB 设备列表异常: {e}")
+            return []
+
+    def _check_device_connected(self, udid: str) -> bool:
+        """
+        检查指定设备是否通过 ADB 连接
+
+        Args:
+            udid: 设备 UDID
+
+        Returns:
+            bool: True 表示设备已连接且状态正常
+        """
+        if not udid:
+            logger.warning("UDID 为空，跳过设备健康检查")
+            return True
+
+        connected_devices = self._get_adb_devices()
+        if udid in connected_devices:
+            logger.info(f"设备健康检查通过: {udid}")
+            return True
+        else:
+            logger.warning(f"设备健康检查失败: {udid} 未在 ADB 设备列表中")
+            logger.debug(f"当前已连接设备: {connected_devices}")
+            return False
+
+    def _check_device_online(self, udid: str) -> bool:
+        """
+        检查设备是否在线（非 offline 状态）
+
+        通过 adb -s <udid> get-state 获取设备状态。
+
+        Args:
+            udid: 设备 UDID
+
+        Returns:
+            bool: True 表示设备在线
+        """
+        if not udid:
+            return True
+
+        try:
+            result = subprocess.run(
+                ['adb', '-s', udid, 'get-state'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            state = result.stdout.strip()
+            if state == 'device':
+                logger.info(f"设备状态正常: {udid} (state={state})")
+                return True
+            else:
+                logger.warning(f"设备状态异常: {udid} (state={state})")
+                return False
+        except FileNotFoundError:
+            logger.error("adb 未安装或不在 PATH 中")
+            return False
+        except subprocess.TimeoutExpired:
+            logger.error(f"检查设备状态超时: {udid}")
+            return False
+        except Exception as e:
+            logger.error(f"检查设备状态异常: {e}")
+            return False
 
     @staticmethod
     def _create_capabilities(device_config: dict) -> UiAutomator2Options:
@@ -138,10 +231,8 @@ class DriverManager:
             self.wait_for_appium_ready()
             return
 
-        import subprocess
         import requests
 
-        # 从配置读取 host 和 port
         host, port = self._get_appium_host_port()
         appium_config = self.config.get('appium', {})
         allow_insecure = appium_config.get('allow_insecure', 'uiautomator2:adb_shell')
@@ -209,9 +300,25 @@ class DriverManager:
             if device_index >= len(devices):
                 raise DeviceNotFoundError(device_index=device_index,
                                           message=f"设备索引 {device_index} 超出范围")
+
             device_config = devices[device_index]
             device_name = device_config.get('device_name', f'device_{device_index}')
             udid = device_config.get('udid', 'N/A')
+
+            # ========== 设备健康检查 ==========
+            if not self._check_device_connected(udid):
+                raise DeviceOfflineError(
+                    device_name=device_name,
+                    udid=udid
+                )
+
+            if not self._check_device_online(udid):
+                raise DeviceOfflineError(
+                    device_name=device_name,
+                    udid=udid
+                )
+            # ========== 健康检查结束 ==========
+
             logger.info(f"正在为设备 [{device_name}] (UDID: {udid}) 创建Driver...")
             options = self._create_capabilities(device_config)
             appium_url = self._get_appium_url()
@@ -225,6 +332,8 @@ class DriverManager:
             logger.info(f"设备 [{device_name}] Driver创建成功")
             return driver
         except DeviceNotFoundError:
+            raise
+        except DeviceOfflineError:
             raise
         except Exception as e:
             error_msg = str(e).lower()
