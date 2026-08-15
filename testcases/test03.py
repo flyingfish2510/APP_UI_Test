@@ -1,5 +1,5 @@
 """
-智慧生活路由器设备测试用例
+智慧生活路由器设备测试用例 - Test03
 """
 
 import pytest
@@ -13,10 +13,10 @@ logger = get_logger(__name__)
 
 @allure.epic("智慧生活")
 @allure.feature("路由器设备管理")
-@allure.story("修改接入设备名称1")
-@allure.tag("router", "device-management", "smoke")
-@pytest.mark.smoke
-class Test01:
+@allure.story("修改接入设备名称3")
+@allure.tag("router", "device-management", "p1")
+@pytest.mark.p1
+class Test03:
     """路由器设备测试类"""
 
     @pytest.fixture
@@ -55,7 +55,7 @@ class Test01:
     @allure.title("修改路由器接入设备名称")
     @allure.description("验证路由器接入设备名称修改功能")
     @allure.severity(allure.severity_level.CRITICAL)
-    def test01(self):
+    def test03(self):
         """测试用例：修改路由器接入设备名称"""
         self.router_page.assert_that.true(
             self.router_page.enter_device_page(),
