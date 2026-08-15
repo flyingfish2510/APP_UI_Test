@@ -31,3 +31,6 @@ screenshots/
 # 临时
 *.tmp
 .DS_Store
+
+# 本地调试文件
+test_cases.txt

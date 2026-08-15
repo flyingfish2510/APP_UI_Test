@@ -51,11 +51,10 @@ class Test01:
         self.access_device_page.modify_device_name(self.original_name)
         sleep(2)
 
-    @pytest.mark.usefixtures("setup")
     @allure.title("修改路由器接入设备名称")
     @allure.description("验证路由器接入设备名称修改功能")
     @allure.severity(allure.severity_level.CRITICAL)
-    def test01(self):
+    def test01(self, setup):
         """测试用例：修改路由器接入设备名称"""
         self.router_page.assert_that.true(
             self.router_page.enter_device_page(),
