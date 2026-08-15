@@ -9,15 +9,14 @@ from core.base_page import BasePage, log_step
 from core.logger import get_logger
 from core.exceptions import PageLoadTimeoutError, ElementNotFoundError
 from core.utils import Utils
+from core.config_validator import ConfigValidator
+
 
 logger = get_logger(__name__)
 
 
-class SmartHomePage(BasePage):
-    """
-    智慧生活首页页面对象
-    """
 
+class SmartHomePage(BasePage):
     def __init__(self, driver, config_path: str = "config/config.yaml"):
         super().__init__(driver, config_path)
         self.logger = get_logger(self.__class__.__name__)
@@ -25,7 +24,9 @@ class SmartHomePage(BasePage):
         xml_path = "config/app_config.xml"
         xml_config = Utils.load_xml(xml_path)
 
-        # xmltodict 返回 {根节点: {子节点...}}，先取根节点
+        # 校验 XML 配置
+        ConfigValidator.validate_xml(xml_config)
+
         root = xml_config.get('app_config', xml_config)
 
         app_config = root.get('app', {})

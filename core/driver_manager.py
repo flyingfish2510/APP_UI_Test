@@ -13,6 +13,8 @@ from appium import webdriver
 from appium.options.android import UiAutomator2Options
 from appium.webdriver.appium_service import AppiumService
 from core.logger import get_logger
+from core.config_validator import ConfigValidator
+
 from core.exceptions import (
     ConfigFileNotFoundError,
     DeviceNotFoundError,
@@ -26,10 +28,7 @@ from core.exceptions import (
 
 logger = get_logger(__name__)
 
-
 class DriverManager:
-    """Appium Driver 管理器"""
-
     def __init__(self, config_path: str = "config/config.yaml",
                  device_config_path: str = "config/device_config.yaml"):
         try:
@@ -37,6 +36,9 @@ class DriverManager:
             self.devices_config = self._load_config(device_config_path)
         except ConfigFileNotFoundError:
             raise
+
+        # 校验配置
+        ConfigValidator.validate_yaml(self.config)
 
         self.appium_service: Optional[AppiumService] = None
         self.appium_process = None
