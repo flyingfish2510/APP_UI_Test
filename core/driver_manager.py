@@ -104,12 +104,7 @@ class DriverManager:
         return host, port
 
     def _get_adb_devices(self) -> List[str]:
-        """
-        获取 ADB 已连接设备列表
-
-        Returns:
-            List[str]: 已连接的设备 UDID 列表
-        """
+        """获取 ADB 已连接设备列表"""
         try:
             result = subprocess.run(
                 ['adb', 'devices'],
@@ -144,12 +139,13 @@ class DriverManager:
         """
         检查指定设备是否通过 ADB 连接
 
-        Args:
-            udid: 设备 UDID
-
-        Returns:
-            bool: True 表示设备已连接且状态正常
+        Docker 环境下跳过检查（adb 可能在容器中不可用），
+        由宿主机 Appium 服务负责设备连接。
         """
+        if self.run_env == 'docker':
+            logger.info("Docker环境，跳过 ADB 设备健康检查")
+            return True
+
         if not udid:
             logger.warning("UDID 为空，跳过设备健康检查")
             return True
@@ -165,16 +161,14 @@ class DriverManager:
 
     def _check_device_online(self, udid: str) -> bool:
         """
-        检查设备是否在线（非 offline 状态）
+        检查设备是否在线
 
-        通过 adb -s <udid> get-state 获取设备状态。
-
-        Args:
-            udid: 设备 UDID
-
-        Returns:
-            bool: True 表示设备在线
+        Docker 环境下跳过检查。
         """
+        if self.run_env == 'docker':
+            logger.info("Docker环境，跳过 ADB 设备状态检查")
+            return True
+
         if not udid:
             return True
 
