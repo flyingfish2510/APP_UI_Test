@@ -11,6 +11,7 @@ appium:
   port: 4723
   command_timeout: 60
   session_override: true
+  allow_insecure: "uiautomator2:adb_shell"
 
 # --------------------------------------------------------------------------
 # 2. 应用配置

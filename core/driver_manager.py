@@ -13,8 +13,6 @@ from appium import webdriver
 from appium.options.android import UiAutomator2Options
 from appium.webdriver.appium_service import AppiumService
 from core.logger import get_logger
-from core.config_validator import ConfigValidator
-
 from core.exceptions import (
     ConfigFileNotFoundError,
     DeviceNotFoundError,
@@ -25,10 +23,14 @@ from core.exceptions import (
     AppiumServiceStartError,
     AppiumConnectionError
 )
+from core.config_validator import ConfigValidator
 
 logger = get_logger(__name__)
 
+
 class DriverManager:
+    """Appium Driver 管理器"""
+
     def __init__(self, config_path: str = "config/config.yaml",
                  device_config_path: str = "config/device_config.yaml"):
         try:
@@ -50,6 +52,7 @@ class DriverManager:
 
     @staticmethod
     def _load_config(config_path: str) -> dict:
+        """加载 YAML 配置文件"""
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
@@ -63,6 +66,7 @@ class DriverManager:
             raise ConfigFileNotFoundError(file_path=config_path)
 
     def _validate_device_config(self):
+        """验证设备配置"""
         devices = self.devices_config.get('devices', [])
         if not devices:
             logger.warning("设备配置列表为空，请检查device_config.yaml")
@@ -72,6 +76,7 @@ class DriverManager:
                 logger.warning(f"设备 {i} 缺少device_name或udid字段")
 
     def _get_run_environment(self) -> str:
+        """判断当前运行环境"""
         env = os.getenv('RUN_ENV')
         if env:
             return env.lower()
@@ -81,6 +86,7 @@ class DriverManager:
         return self.config.get('environment', {}).get('run_env', 'local')
 
     def _get_appium_url(self) -> str:
+        """根据运行环境获取 Appium 服务地址"""
         appium_config = self.config.get('appium', {})
         if self.run_env == 'docker':
             docker_host = os.getenv('APPIUM_HOST', appium_config.get('docker_host', 'http://appium:4723'))
@@ -88,8 +94,24 @@ class DriverManager:
         else:
             return appium_config.get('local_host', 'http://127.0.0.1:4723')
 
+    def _get_appium_host_port(self) -> tuple:
+        """
+        从 Appium URL 解析 host 和 port
+
+        Returns:
+            tuple: (host, port)
+        """
+        appium_url = self._get_appium_url()
+        # 解析 http://127.0.0.1:4723 格式
+        url_without_protocol = appium_url.replace('http://', '').replace('https://', '')
+        parts = url_without_protocol.split(':')
+        host = parts[0]
+        port = int(parts[1]) if len(parts) > 1 else 4723
+        return host, port
+
     @staticmethod
     def _create_capabilities(device_config: dict) -> UiAutomator2Options:
+        """根据设备配置创建 Appium Capabilities"""
         options = UiAutomator2Options()
         options.platform_name = device_config.get('platform_name', 'Android')
         options.automation_name = device_config.get('automation_name', 'UiAutomator2')
@@ -111,6 +133,7 @@ class DriverManager:
 
     @allure.step("启动Appium服务")
     def start_appium_service(self):
+        """启动 Appium 服务（仅本地环境）"""
         if self.run_env == 'docker':
             self.wait_for_appium_ready()
             return
@@ -118,31 +141,39 @@ class DriverManager:
         import subprocess
         import requests
 
+        # 从配置读取 host 和 port
+        host, port = self._get_appium_host_port()
+        appium_config = self.config.get('appium', {})
+        allow_insecure = appium_config.get('allow_insecure', 'uiautomator2:adb_shell')
+
         try:
-            logger.info("正在启动Appium服务...")
-            cmd = 'appium --allow-insecure uiautomator2:adb_shell'
+            logger.info(f"正在启动Appium服务... (host={host}, port={port})")
+            cmd = f'appium --address {host} --port {port} --allow-insecure {allow_insecure}'
             self.appium_process = subprocess.Popen(
                 cmd, shell=True,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
+
+            status_url = f'http://{host}:{port}/status'
             max_retries = 30
             for i in range(max_retries):
                 try:
-                    response = requests.get('http://127.0.0.1:4723/status', timeout=1)
+                    response = requests.get(status_url, timeout=1)
                     if response.status_code == 200:
                         logger.info("Appium服务已启动")
                         return
                 except requests.ConnectionError:
                     pass
                 time.sleep(2)
-            raise AppiumServiceStartError(service_url=self._get_appium_url(), reason="服务启动超时")
+            raise AppiumServiceStartError(service_url=status_url, reason="服务启动超时")
         except AppiumServiceStartError:
             raise
         except Exception as e:
-            raise AppiumServiceStartError(service_url=self._get_appium_url(), reason=str(e)) from e
+            raise AppiumServiceStartError(service_url=f'http://{host}:{port}', reason=str(e)) from e
 
     def wait_for_appium_ready(self):
+        """等待 Appium 服务就绪（Docker 环境）"""
         import requests
         appium_url = self._get_appium_url()
         for i in range(30):
@@ -158,6 +189,7 @@ class DriverManager:
 
     @allure.step("停止Appium服务")
     def stop_appium_service(self):
+        """停止 Appium 服务"""
         if self.appium_process:
             try:
                 self.appium_process.terminate()
@@ -167,6 +199,7 @@ class DriverManager:
 
     @allure.step("创建Driver (设备索引: {device_index})")
     def create_driver(self, device_index: int = 0) -> webdriver.Remote:
+        """为指定设备创建 Driver 实例"""
         device_name = None
         udid = None
         try:
@@ -207,6 +240,7 @@ class DriverManager:
                 raise DriverCreationError(device_name=device_name, original_error=str(e)) from e
 
     def get_driver(self, device_name: str = None) -> Optional[webdriver.Remote]:
+        """获取指定设备的 Driver"""
         if not self.drivers:
             raise DriverNotInitializedError(message="没有可用的Driver实例")
         if device_name:
@@ -218,6 +252,7 @@ class DriverManager:
         raise DriverNotInitializedError(message="没有活跃的Driver实例")
 
     def quit_driver(self, device_name: str = None):
+        """关闭指定设备的 Driver"""
         if device_name:
             if device_name in self.drivers:
                 try:
@@ -235,14 +270,17 @@ class DriverManager:
 
     @allure.step("关闭所有Driver")
     def quit_all_drivers(self):
+        """关闭所有 Driver"""
         logger.info("正在关闭所有Driver...")
         self.quit_driver()
         logger.info("所有Driver已关闭")
 
     def get_device_count(self) -> int:
+        """获取设备数量"""
         return len(self.devices_config.get('devices', []))
 
     def get_device_info(self, device_index: int = None) -> List[Dict]:
+        """获取设备配置信息"""
         devices = self.devices_config.get('devices', [])
         if device_index is not None:
             if device_index < len(devices):
@@ -251,6 +289,7 @@ class DriverManager:
         return devices
 
     def is_device_connected(self, device_name: str) -> bool:
+        """检查设备是否已连接"""
         return device_name in self.drivers and device_name in self.active_drivers
 
 
