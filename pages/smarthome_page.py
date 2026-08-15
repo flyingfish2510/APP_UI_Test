@@ -24,7 +24,6 @@ class SmartHomePage(BasePage):
         xml_path = "config/app_config.xml"
         xml_config = Utils.load_xml(xml_path)
 
-        # 校验 XML 配置
         ConfigValidator.validate_xml(xml_config)
 
         root = xml_config.get('app_config', xml_config)
@@ -74,9 +73,10 @@ class SmartHomePage(BasePage):
 
     LOADING_INDICATOR = (AppiumBy.XPATH, "//android.widget.ProgressBar")
 
-    @timeout(60)
     @log_step("启动应用")
+    @timeout(60)
     def launch_app(self) -> bool:
+        """启动应用"""
         self.logger.info(f"正在启动应用: {self.APP_PACKAGE}")
 
         self.device.wake_and_unlock()
@@ -97,6 +97,7 @@ class SmartHomePage(BasePage):
 
     @timeout(45)
     def wait_for_page_load(self, timeout: int = None):
+        """等待页面加载完成"""
         timeout = timeout or self.PAGE_LOAD_TIMEOUT
         self.logger.info(f"等待页面加载，标识元素: '{self.HOME_TAB_NAME}'...")
 
@@ -124,9 +125,10 @@ class SmartHomePage(BasePage):
                 expected_element=f"名称为'{self.HOME_TAB_NAME}'的元素"
             ) from e
 
-    @timeout(30)
     @log_step("点击设备卡片")
+    @timeout(30)
     def click_device_card(self, device_name: str, timeout: int = 10) -> bool:
+        """点击指定名称的设备卡片"""
         self.logger.info(f"点击设备卡片: {device_name}")
 
         locators = [
@@ -147,10 +149,12 @@ class SmartHomePage(BasePage):
         return False
 
     def is_on_home_tab(self) -> bool:
+        """判断当前是否在首页标签页"""
         return self.is_element_present(self.HOME_TAB, timeout=3) or \
                self.is_element_present(self.HOME_TAB_CONTAINS, timeout=3)
 
     def is_device_card_present(self, device_name: str) -> bool:
+        """判断指定名称的设备卡片是否存在"""
         locator = AppiumBy.XPATH, f"//android.widget.TextView[@text='{device_name}']"
         locator_contains = AppiumBy.XPATH, f"//android.widget.TextView[contains(@text, '{device_name}')]"
         return self.is_element_present(locator, timeout=3) or \

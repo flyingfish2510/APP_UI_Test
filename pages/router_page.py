@@ -27,9 +27,10 @@ class RouterPage(BasePage):
         super().__init__(driver)
         self.logger = get_logger(self.__class__.__name__)
 
-    @timeout(15)
     @log_step("进入设备页面")
+    @timeout(15)
     def enter_device_page(self, use_xpath: bool = False, timeout: int = 10) -> bool:
+        """点击进入设备页面"""
         self.logger.info("进入设备页面...")
 
         if not use_xpath:
@@ -53,9 +54,10 @@ class RouterPage(BasePage):
         sleep(3)
         return self.click_by_coordinate(*self.DEVICE_COORDINATE)
 
-    @timeout(15)
     @log_step("进入接入设备页面")
+    @timeout(15)
     def enter_access_device_page(self, use_xpath: bool = False, timeout: int = 10) -> bool:
+        """点击进入接入设备页面"""
         self.logger.info("进入接入设备页面...")
 
         if not use_xpath:
