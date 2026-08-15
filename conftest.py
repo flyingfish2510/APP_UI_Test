@@ -7,6 +7,9 @@ import os
 import sys
 import json
 import pytest
+import time
+import psutil
+import allure
 from datetime import datetime
 from typing import Dict, Generator
 from _pytest.runner import TestReport
@@ -17,8 +20,6 @@ from appium.webdriver.webdriver import WebDriver
 project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
-import allure
 
 from core.driver_manager import driver_manager
 from core.logger import get_logger
@@ -52,6 +53,7 @@ def pytest_configure(config: Config):
     config.addinivalue_line("markers", "p0: 优先级P0")
     config.addinivalue_line("markers", "p1: 优先级P1")
     config.addinivalue_line("markers", "p2: 优先级P2")
+    config.addinivalue_line("markers", "p3: 优先级P3")
 
 
 def pytest_sessionstart(session):
@@ -67,11 +69,10 @@ def pytest_sessionstart(session):
                     f"(UDID: {device.get('udid', 'N/A')})")
     logger.info("=" * 60)
 
-    # ========== Allure 环境信息（写入文件） ==========
+    # Allure 环境信息
     allure_dir = os.path.join(project_root, 'reports', 'allure-results')
     Utils.ensure_dir(allure_dir)
 
-    # 1. environment.properties（ISO-8859-1 编码避免乱码）
     env_props = [
         f"RunEnv={driver_manager.run_env}",
         f"DeviceCount={driver_manager.get_device_count()}",
@@ -87,7 +88,6 @@ def pytest_sessionstart(session):
     with open(env_path, 'w', encoding='ISO-8859-1') as f:
         f.write('\n'.join(env_props))
 
-    # 2. executor.json
     executor_info = {
         "name": "APP_UI_Test Runner",
         "type": "pytest",
@@ -99,35 +99,16 @@ def pytest_sessionstart(session):
     with open(executor_path, 'w', encoding='utf-8') as f:
         json.dump(executor_info, f, ensure_ascii=False, indent=2)
 
-    # 3. categories.json
     categories = [
-        {
-            "name": "Test Failure",
-            "matchedStatuses": ["failed"],
-            "messageRegex": ".*AssertionError.*"
-        },
-        {
-            "name": "Element Not Found",
-            "matchedStatuses": ["failed"],
-            "messageRegex": ".*ElementNotFoundError.*"
-        },
-        {
-            "name": "Device Connection Failed",
-            "matchedStatuses": ["failed"],
-            "messageRegex": ".*ConnectionError.*|.*AppiumConnectionError.*"
-        },
-        {
-            "name": "Test Passed",
-            "matchedStatuses": ["passed"]
-        },
-        {
-            "name": "Test Skipped",
-            "matchedStatuses": ["skipped"]
-        },
-        {
-            "name": "Test Broken",
-            "matchedStatuses": ["broken"]
-        }
+        {"name": "Test Failure", "matchedStatuses": ["failed"],
+         "messageRegex": ".*AssertionError.*"},
+        {"name": "Element Not Found", "matchedStatuses": ["failed"],
+         "messageRegex": ".*ElementNotFoundError.*"},
+        {"name": "Device Connection Failed", "matchedStatuses": ["failed"],
+         "messageRegex": ".*ConnectionError.*|.*AppiumConnectionError.*"},
+        {"name": "Test Passed", "matchedStatuses": ["passed"]},
+        {"name": "Test Skipped", "matchedStatuses": ["skipped"]},
+        {"name": "Test Broken", "matchedStatuses": ["broken"]}
     ]
     categories_path = os.path.join(allure_dir, 'categories.json')
     with open(categories_path, 'w', encoding='utf-8') as f:
@@ -179,7 +160,6 @@ def driver(request) -> Generator[WebDriver, None, None]:
         logger.info(f"测试用例 [{request.node.name}] 开始执行 (设备: {device_name})")
         global_recovery_manager.driver_getter = lambda: driver_instance
 
-        # Allure 设备标签
         allure.dynamic.tag(f"Device:{device_name}")
         allure.dynamic.tag(f"UDID:{udid}")
 
@@ -252,6 +232,45 @@ def manage_smarthome_app(driver):
         logger.debug(f"关闭智慧生活应用异常: {e}")
 
 
+@pytest.fixture(autouse=True)
+def performance_monitor(request):
+    """
+    性能监控 fixture
+
+    采集每个用例的执行时间、CPU 使用率和内存使用率，
+    并附加到 Allure 报告中。
+    """
+    start_time = time.time()
+    start_cpu = psutil.cpu_percent(interval=None)
+    start_mem = psutil.virtual_memory().percent
+
+    yield
+
+    end_time = time.time()
+    end_cpu = psutil.cpu_percent(interval=None)
+    end_mem = psutil.virtual_memory().percent
+
+    exec_time = end_time - start_time
+    cpu_usage = max(0, end_cpu - start_cpu)
+    mem_usage = max(0, end_mem - start_mem)
+
+    perf_data = (
+        f"执行时间: {exec_time:.2f}s\n"
+        f"CPU使用率变化: {cpu_usage:.1f}%\n"
+        f"内存使用率变化: {mem_usage:.1f}%\n"
+        f"结束CPU: {end_cpu:.1f}%\n"
+        f"结束内存: {end_mem:.1f}%"
+    )
+
+    allure.attach(
+        perf_data,
+        name="Performance Data",
+        attachment_type=allure.attachment_type.TEXT
+    )
+
+    logger.info(f"性能数据: 执行时间={exec_time:.2f}s, CPU变化={cpu_usage:.1f}%, 内存变化={mem_usage:.1f}%")
+
+
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     """测试报告钩子"""
@@ -259,7 +278,6 @@ def pytest_runtest_makereport(item, call):
     report = outcome.get_result()
 
     if report.when == "call":
-        # 记录重试次数
         rerun_count = getattr(item, 'execution_count', 0)
         if rerun_count > 0:
             allure.dynamic.description(

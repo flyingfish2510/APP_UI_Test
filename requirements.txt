@@ -10,3 +10,4 @@ selenium==4.15.2
 python-dotenv==1.0.0
 requests==2.34.2
 xmltodict==0.13.0
+psutil==5.9.8
