@@ -45,9 +45,8 @@ logger = get_logger(__name__)
 
 HISTORY_DIR = os.path.join(project_root, 'reports', 'history')
 
-# 断线重连配置
 MAX_RECONNECT_ATTEMPTS = 3
-RECONNECT_DELAY = 2  # 秒
+RECONNECT_DELAY = 2
 
 
 def pytest_configure(config: Config):
@@ -275,12 +274,7 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture(scope="function")
 def driver(request) -> Generator[WebDriver, None, None]:
-    """
-    WebDriver fixture（带断线重连机制）
-
-    当 Driver 创建失败时自动重试，最多重试 MAX_RECONNECT_ATTEMPTS 次。
-    重试前会重启 Appium 服务（本地环境）。
-    """
+    """WebDriver fixture（带断线重连机制）"""
     device_index = getattr(request, 'param', 0)
     if hasattr(request.config, 'option') and hasattr(request.config.option, 'device_index'):
         device_index = request.config.option.device_index
@@ -290,7 +284,6 @@ def driver(request) -> Generator[WebDriver, None, None]:
     udid = None
     last_exception = None
 
-    # ========== 断线重连循环 ==========
     for attempt in range(MAX_RECONNECT_ATTEMPTS):
         try:
             driver_instance = driver_manager.create_driver(device_index)
@@ -306,7 +299,7 @@ def driver(request) -> Generator[WebDriver, None, None]:
             allure.dynamic.tag(f"Device:{device_name}")
             allure.dynamic.tag(f"UDID:{udid}")
 
-            break  # 创建成功，退出重试循环
+            break
 
         except DeviceNotFoundError:
             logger.error("设备未找到（不可重试）")
@@ -317,7 +310,6 @@ def driver(request) -> Generator[WebDriver, None, None]:
                 logger.warning(
                     f"Driver创建失败，第 {attempt + 1}/{MAX_RECONNECT_ATTEMPTS} 次重试: {e}"
                 )
-                # 关闭可能残留的 Driver
                 driver_manager.quit_all_drivers()
                 time.sleep(RECONNECT_DELAY * (attempt + 1))
             else:
@@ -377,6 +369,8 @@ def device_ops(driver) -> DeviceOperations:
 @pytest.fixture(autouse=True)
 def manage_smarthome_app(driver):
     """自动管理智慧生活应用生命周期"""
+    from core.utils import Utils
+
     device = DeviceOperations(driver)
     smarthome = SmartHomePage(driver)
 
@@ -384,11 +378,17 @@ def manage_smarthome_app(driver):
 
     yield
 
+    # 从 XML 读取包名，避免硬编码
+    xml_config = Utils.load_xml("config/app_config.xml")
+    root = xml_config.get('app_config', xml_config)
+    app_config = root.get('app', {})
+    app_package = app_config.get('package', '')
+
     try:
-        device.close_app("com.huawei.smarthome")
-        logger.info("已自动关闭智慧生活应用")
+        device.close_app(app_package)
+        logger.info(f"已自动关闭应用: {app_package}")
     except Exception as e:
-        logger.debug(f"关闭智慧生活应用异常: {e}")
+        logger.debug(f"关闭应用异常: {e}")
 
 
 @pytest.fixture(autouse=True)
