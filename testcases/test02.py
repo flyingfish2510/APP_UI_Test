@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 @allure.story("修改接入设备名称")
 @allure.tag("router", "device-management", "regression", "p1")
 @pytest.mark.regression
-@pytest.mark.p1
+@pytest.mark.p2
 class Test02:
     """路由器设备测试类"""
 
