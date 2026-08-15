@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 @allure.epic("智慧生活")
 @allure.feature("路由器设备管理")
-@allure.story("修改接入设备名称3")
+@allure.story("修改接入设备名称")
 @allure.tag("router", "device-management", "p1")
 @pytest.mark.p1
 class Test03:

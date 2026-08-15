@@ -1,7 +1,7 @@
 """
 企业级日志记录模块
 支持控制台和文件输出，可自主设置打印级别
-日志文件名自动包含日期，格式：automation_2026-08-09.log
+日志文件名自动包含日期，格式：automation_2026-08-15.log
 """
 
 import os
@@ -78,6 +78,7 @@ class Logger:
             return self._loggers[name]
 
         logger = logging.getLogger(name)
+        logger.propagate = False  # 禁止向根 logger 传播，避免重复输出
         level = log_level or self.log_config.get('level', 'INFO')
         logger.setLevel(getattr(logging, level.upper(), logging.INFO))
         logger.handlers.clear()
