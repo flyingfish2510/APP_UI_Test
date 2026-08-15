@@ -4,7 +4,7 @@
 
 from appium.webdriver.common.appiumby import AppiumBy
 from time import sleep
-from core.base_page import BasePage, log_step, method_timeout
+from core.base_page import BasePage, log_step
 from core.logger import get_logger
 from core.exceptions import ElementNotFoundError
 
@@ -28,7 +28,6 @@ class RouterPage(BasePage):
         self.logger = get_logger(self.__class__.__name__)
 
     @log_step("进入设备页面")
-    @method_timeout(15)
     def enter_device_page(self, use_xpath: bool = False, wait_timeout: int = 10) -> bool:
         """点击进入设备页面"""
         self.logger.info("进入设备页面...")
@@ -55,7 +54,6 @@ class RouterPage(BasePage):
         return self.click_by_coordinate(*self.DEVICE_COORDINATE)
 
     @log_step("进入接入设备页面")
-    @method_timeout(15)
     def enter_access_device_page(self, use_xpath: bool = False, wait_timeout: int = 10) -> bool:
         """点击进入接入设备页面"""
         self.logger.info("进入接入设备页面...")

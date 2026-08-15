@@ -5,7 +5,7 @@
 
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import TimeoutException
-from core.base_page import BasePage, log_step, method_timeout
+from core.base_page import BasePage, log_step
 from core.logger import get_logger
 from core.exceptions import PageLoadTimeoutError, ElementNotFoundError
 from core.utils import Utils
@@ -74,7 +74,6 @@ class SmartHomePage(BasePage):
     LOADING_INDICATOR = (AppiumBy.XPATH, "//android.widget.ProgressBar")
 
     @log_step("启动应用")
-    @method_timeout(60)
     def launch_app(self) -> bool:
         """启动应用"""
         self.logger.info(f"正在启动应用: {self.APP_PACKAGE}")
@@ -95,7 +94,6 @@ class SmartHomePage(BasePage):
             self.logger.error(f"应用页面加载超时: {self.APP_PACKAGE}")
             return False
 
-    @method_timeout(45)
     def wait_for_page_load(self, wait_timeout: int = None):
         """等待页面加载完成"""
         wait_timeout = wait_timeout or self.PAGE_LOAD_TIMEOUT
@@ -126,7 +124,6 @@ class SmartHomePage(BasePage):
             ) from e
 
     @log_step("点击设备卡片")
-    @method_timeout(30)
     def click_device_card(self, device_name: str, wait_timeout: int = 10) -> bool:
         """点击指定名称的设备卡片"""
         self.logger.info(f"点击设备卡片: {device_name}")
