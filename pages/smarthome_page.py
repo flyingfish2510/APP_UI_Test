@@ -25,14 +25,17 @@ class SmartHomePage(BasePage):
         xml_path = "config/app_config.xml"
         xml_config = Utils.load_xml(xml_path)
 
-        app_config = xml_config.get('app', {})
-        page_load_config = xml_config.get('page_load', {})
-        nav_config = xml_config.get('navigation', {})
+        # xmltodict 返回 {根节点: {子节点...}}，先取根节点
+        root = xml_config.get('app_config', xml_config)
+
+        app_config = root.get('app', {})
+        page_load_config = root.get('page_load', {})
+        nav_config = root.get('navigation', {})
 
         self.APP_PACKAGE = app_config.get('package', '')
         self.HOME_TAB_NAME = page_load_config.get('home_tab_name', '')
         self.PAGE_LOAD_TIMEOUT = int(page_load_config.get('timeout', 30))
-        self.DEFAULT_DEVICE_NAME = xml_config.get('default_device', '')
+        self.DEFAULT_DEVICE_NAME = root.get('default_device', '')
 
         self.NAV_HOME_TAB = nav_config.get('home_tab', '')
         self.NAV_PRODUCT_TAB = nav_config.get('product_tab', '')
@@ -141,14 +144,6 @@ class SmartHomePage(BasePage):
         self.logger.error(f"未找到设备卡片: {device_name}")
         self._take_screenshot(f"device_not_found_{device_name}")
         return False
-
-    @log_step("点击默认设备卡片")
-    def click_default_device(self) -> bool:
-        """点击 XML 配置中指定的默认设备卡片"""
-        if not self.DEFAULT_DEVICE_NAME:
-            self.logger.warning("未配置默认设备名称")
-            return False
-        return self.click_device_card(self.DEFAULT_DEVICE_NAME)
 
     def is_on_home_tab(self) -> bool:
         """判断当前是否在首页标签页"""

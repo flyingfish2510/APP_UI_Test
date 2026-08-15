@@ -4,6 +4,8 @@
 """
 
 import os
+
+import xmltodict
 import yaml
 import subprocess
 import platform
@@ -204,16 +206,15 @@ class Utils:
         Returns:
             dict: 配置数据字典
         """
-        import xml.etree.ElementTree as ET
+        import xmltodict
         try:
-            tree = ET.parse(file_path)
-            root = tree.getroot()
-            return Utils._xml_to_dict(root)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return xmltodict.parse(f.read())
         except FileNotFoundError:
             logger.error(f"XML配置文件不存在: {file_path}")
             return {}
-        except ET.ParseError as e:
-            logger.error(f"XML配置文件格式错误: {e}")
+        except Exception as e:
+            logger.error(f"XML配置文件解析失败: {e}")
             return {}
 
     @staticmethod

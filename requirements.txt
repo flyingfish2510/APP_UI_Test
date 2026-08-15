@@ -4,8 +4,9 @@ pytest-xdist==3.5.0
 pytest-rerunfailures==13.0
 pytest-timeout==2.2.0
 allure-pytest==2.13.2
+allure-python-commons==2.13.2
 PyYAML==6.0.1
 selenium==4.15.2
 python-dotenv==1.0.0
-allure-python-commons
-requests
+requests==2.34.2
+xmltodict==0.13.0

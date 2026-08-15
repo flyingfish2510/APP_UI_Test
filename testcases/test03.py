@@ -27,15 +27,17 @@ class Test03:
         self.access_device_page = access_device_page
 
         xml_config = Utils.load_xml("config/app_config.xml")
-        test_data = xml_config.get('test_data', {})
+        root = xml_config.get('app_config', xml_config)
+
+        test_data = root.get('test_data', {})
         self.original_name = test_data.get('original_name', 'iPhone')
         self.new_name = test_data.get('new_name', '')
 
-        wifi_config = xml_config.get('wifi', {})
+        wifi_config = root.get('wifi', {})
         self.wifi_ssid = wifi_config.get('ssid', '')
         self.wifi_password = wifi_config.get('password', '')
 
-        self.default_device = xml_config.get('default_device', '')
+        self.default_device = root.get('default_device', '')
 
         logger.info("前置条件：连接WiFi")
         self.smarthome_page.device.enable_wifi()
