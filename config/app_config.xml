@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<app_config>
+    <app>
+        <package>com.huawei.smarthome</package>
+    </app>
+    <page_load>
+        <home_tab_name>家居</home_tab_name>
+        <timeout>30</timeout>
+    </page_load>
+    <default_device>路由 BE3 Pro</default_device>
+    <navigation>
+        <home_tab>家居</home_tab>
+        <product_tab>产品</product_tab>
+        <discover_tab>发现</discover_tab>
+        <scene_tab>场景</scene_tab>
+        <me_tab>我的</me_tab>
+    </navigation>
+    <test_data>
+        <original_name>iPhone</original_name>
+        <new_name>貂蝉西施Abc123@😊</new_name>
+    </test_data>
+    <wifi>
+        <ssid>xiaomi</ssid>
+        <password>15871778814</password>
+    </wifi>
+</app_config>

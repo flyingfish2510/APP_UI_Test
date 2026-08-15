@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  appium:
+    image: appium/appium:latest
+    container_name: appium-server
+    privileged: true
+    ports:
+      - "4723:4723"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+    environment:
+      - APPIUM_HOST=0.0.0.0
+      - APPIUM_PORT=4723
+    network_mode: host
+
+  test-runner:
+    build: .
+    container_name: app-ui-test-runner
+    depends_on:
+      - appium
+    environment:
+      - RUN_ENV=docker
+      - CI=true
+      - APPIUM_HOST=http://appium:4723
+    volumes:
+      - ./reports:/app/reports
+      - ./screenshots:/app/screenshots
+      - ./logs:/app/logs
+    command: python run_tests.py --env docker

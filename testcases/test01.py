@@ -1,0 +1,83 @@
+"""
+智慧生活路由器设备测试用例
+"""
+
+import pytest
+from time import sleep
+from core.logger import get_logger
+from core.utils import Utils
+
+logger = get_logger(__name__)
+
+
+class Test01:
+    """路由器设备测试类"""
+
+    @pytest.fixture
+    def setup(self, smarthome_page, router_page, access_device_page):
+        """前置和后置处理"""
+        self.smarthome_page = smarthome_page
+        self.router_page = router_page
+        self.access_device_page = access_device_page
+
+        xml_config = Utils.load_xml("config/app_config.xml")
+        test_data = xml_config.get('test_data', {})
+        self.original_name = test_data.get('original_name', 'iPhone')
+        self.new_name = test_data.get('new_name', '')
+
+        wifi_config = xml_config.get('wifi', {})
+        self.wifi_ssid = wifi_config.get('ssid', '')
+        self.wifi_password = wifi_config.get('password', '')
+
+        logger.info("前置条件：连接WiFi")
+        self.smarthome_page.device.enable_wifi()
+        sleep(2)
+
+        logger.info("前置条件：进入'路由 BE3 Pro'卡片")
+        device_name = xml_config.get('default_device', '')
+        self.smarthome_page.click_device_card(device_name)
+
+        yield
+
+        logger.info("=" * 50)
+        logger.info(f"后置处理：修改设备名称为'{self.original_name}'")
+        self.access_device_page.modify_device_name(self.original_name)
+
+    @pytest.mark.usefixtures("setup")
+    def test01(self):
+        """测试用例：修改路由器接入设备名称"""
+        self.router_page.assert_that.true(
+            self.router_page.enter_device_page(),
+            "进入设备页面失败"
+        )
+
+        self.router_page.assert_that.true(
+            self.router_page.enter_access_device_page(),
+            "进入接入设备页面失败"
+        )
+
+        self.access_device_page.assert_that.true(
+            self.access_device_page.enter_offline_devices(),
+            "进入离线设备页面失败"
+        )
+
+        self.access_device_page.assert_that.true(
+            self.access_device_page.enter_device_by_name(self.original_name),
+            f"进入'{self.original_name}'设备管理页面失败"
+        )
+
+        self.access_device_page.assert_that.true(
+            self.access_device_page.modify_device_name(self.new_name),
+            f"修改设备名称为'{self.new_name}'失败"
+        )
+
+        logger.info("等待2秒")
+        sleep(2)
+
+        actual_name = self.access_device_page.get_device_name()
+        logger.info(f"当前设备名称: {actual_name}")
+
+        self.access_device_page.assert_that.equal(
+            actual_name, self.new_name,
+            f"设备名称不匹配，期望: {self.new_name}，实际: {actual_name}"
+        )

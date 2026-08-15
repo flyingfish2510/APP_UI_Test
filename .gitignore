@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 日志
+logs/
+*.log
+
+# 报告
+reports/
+allure-report/
+junit-results/
+
+# 截图
+screenshots/
+*.png
+
+# 缓存
+.pytest_cache/
+
+# 临时
+*.tmp
+.DS_Store

@@ -1,0 +1,17 @@
+# ============================================================================
+# APP_UI_Test - 设备配置文件
+# ============================================================================
+
+devices:
+  # 真机设备
+  - device_name: "Android_Real"
+    platform_name: "Android"
+    platform_version: "13.0"
+    automation_name: "UiAutomator2"
+    udid: "619aae4"
+    no_reset: true
+    full_reset: false
+    new_command_timeout: 600
+    auto_grant_permissions: true
+    skip_server_installation: false
+    skip_device_initialization: false

@@ -1,0 +1,191 @@
+# ============================================================================
+# APP_UI_Test - 全局配置文件
+# ============================================================================
+
+# --------------------------------------------------------------------------
+# 1. Appium 服务配置
+# --------------------------------------------------------------------------
+appium:
+  local_host: "http://127.0.0.1:4723"
+  docker_host: "http://host.docker.internal:4723"
+  port: 4723
+  command_timeout: 60
+  session_override: true
+
+# --------------------------------------------------------------------------
+# 2. 应用配置
+# --------------------------------------------------------------------------
+app:
+  app_package: ""
+  app_activity: ""
+  quit_app_after_test: false
+  reset_app_before_test: false
+  auto_grant_permissions: true
+  wait_for_app_launch_timeout: 30
+
+# --------------------------------------------------------------------------
+# 3. 超时配置（秒）
+# --------------------------------------------------------------------------
+timeout:
+  implicit_wait: 10
+  explicit_wait: 20
+  page_load_timeout: 30
+  script_timeout: 30
+  app_launch_timeout: 60
+  element_presence_timeout: 5
+  element_disappear_timeout: 15
+
+# --------------------------------------------------------------------------
+# 4. 截图配置
+# --------------------------------------------------------------------------
+screenshot:
+  save_path: "./screenshots"
+  on_failure: true
+  on_success: false
+  format: "png"
+  quality: 80
+  prefix: "screenshot"
+  embed_in_allure: true
+
+# --------------------------------------------------------------------------
+# 5. 日志配置
+# --------------------------------------------------------------------------
+logging:
+  level: "INFO"
+  console_level: "INFO"
+  file_level: "DEBUG"
+  format: "%(asctime)s [%(levelname)-8s] %(name)-20s - %(filename)s:%(lineno)-4d - %(message)s"
+  console_format: "%(asctime)s [%(levelname)s] %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+  file_path: "./logs"
+  file_name: "automation.log"
+  pytest_log_file: "pytest.log"
+  summary_log_file: "test_summary.json"
+  console_output: true
+  file_output: true
+  max_file_size: 10
+  backup_count: 5
+  include_traceback: true
+
+# --------------------------------------------------------------------------
+# 6. Allure报告配置
+# --------------------------------------------------------------------------
+allure:
+  results_path: "./reports/allure-results"
+  report_path: "./reports/allure-report"
+  clean_results: true
+  clean_report: true
+  auto_open: false
+  report_title: "APP_UI_Test 自动化测试报告"
+  environment:
+    Framework: "Appium + Pytest + Allure"
+    Language: "Python 3.10"
+    TestType: "Mobile Automation"
+    Platform: "Android"
+    AutomationName: "UiAutomator2"
+
+# --------------------------------------------------------------------------
+# 7. 测试环境配置
+# --------------------------------------------------------------------------
+environment:
+  run_env: "local"
+  device_type: "emulator"
+  platform_name: "Android"
+  platform_version: "12.0"
+  automation_name: "UiAutomator2"
+
+# --------------------------------------------------------------------------
+# 8. 重试配置
+# --------------------------------------------------------------------------
+retry:
+  max_retries: 2
+  retry_delay: 1
+  backoff_factor: 2.0
+  element_retry_count: 3
+  screenshot_on_retry: true
+
+# --------------------------------------------------------------------------
+# 9. 测试执行配置
+# --------------------------------------------------------------------------
+test_execution:
+  max_failures: 5
+  test_timeout: 300
+  parallel_processes: 1
+  auto_cleanup: true
+  junit_report: true
+  junit_report_path: "./reports/junit-results"
+
+# --------------------------------------------------------------------------
+# 10. 设备管理配置
+# --------------------------------------------------------------------------
+device_management:
+  device_config_file: "./config/device_config.yaml"
+  max_devices: 4
+  health_check_interval: 30
+  check_connection_before_test: true
+  auto_reconnect: false
+
+# --------------------------------------------------------------------------
+# 11. 网络配置
+# --------------------------------------------------------------------------
+network:
+  default_connection: 6
+  network_switch_wait: 3
+  restore_network_after_test: false
+
+# --------------------------------------------------------------------------
+# 12. 测试数据配置
+# --------------------------------------------------------------------------
+test_data:
+  data_file_path: "./config/test_data.yaml"
+  data_driven: false
+  default_user:
+    username: "testuser"
+    password: "testpassword123"
+  loading_texts:
+    - "加载中"
+    - "Loading"
+    - "请稍候"
+
+# --------------------------------------------------------------------------
+# 13. 性能监控配置
+# --------------------------------------------------------------------------
+performance:
+  enabled: false
+  collect_interval: 5
+  metrics:
+    - cpu
+    - memory
+    - fps
+    - network
+  data_path: "./reports/performance"
+
+# --------------------------------------------------------------------------
+# 14. 通知配置
+# --------------------------------------------------------------------------
+notification:
+  enabled: false
+  method: "email"
+  email:
+    smtp_server: "smtp.example.com"
+    smtp_port: 587
+    sender: "test@example.com"
+    receivers:
+      - "team@example.com"
+    subject_prefix: "[APP_UI_Test]"
+  dingtalk:
+    webhook_url: ""
+    secret: ""
+  wechat:
+    webhook_url: ""
+
+# --------------------------------------------------------------------------
+# 15. 调试配置
+# --------------------------------------------------------------------------
+debug:
+  enabled: false
+  pause_on_failure: false
+  save_page_source_on_failure: true
+  page_source_path: "./reports/page-sources"
+  log_each_step: false
+  profiling: false
