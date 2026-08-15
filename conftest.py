@@ -28,6 +28,7 @@ from core.utils import Utils
 from core.exceptions import (
     DriverCreationError,
     DeviceNotFoundError,
+    DeviceOfflineError,
     AppiumConnectionError,
     AppiumServiceStartError
 )
@@ -43,6 +44,10 @@ from pages.access_device_page import AccessDevicePage
 logger = get_logger(__name__)
 
 HISTORY_DIR = os.path.join(project_root, 'reports', 'history')
+
+# 断线重连配置
+MAX_RECONNECT_ATTEMPTS = 3
+RECONNECT_DELAY = 2  # 秒
 
 
 def pytest_configure(config: Config):
@@ -60,12 +65,7 @@ def pytest_configure(config: Config):
 
 
 def _restore_history(allure_dir: str):
-    """
-    恢复历史趋势数据到 allure-results
-
-    将 reports/history/ 中的趋势数据复制到 allure-results/，
-    使 Allure 报告展示趋势对比。
-    """
+    """恢复历史趋势数据"""
     trend_files = [
         'history.json',
         'history-trend.json',
@@ -83,7 +83,7 @@ def _restore_history(allure_dir: str):
 
 
 def _load_json(file_path: str) -> list:
-    """安全加载 JSON 文件，失败返回空列表"""
+    """安全加载 JSON 文件"""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -101,22 +101,12 @@ def _save_json(file_path: str, data: list):
 
 
 def _save_history(session, exitstatus):
-    """
-    保存本次测试结果到历史趋势数据
-
-    更新以下文件（保留最近 100 条记录）：
-    - history.json：测试结果历史
-    - history-trend.json：通过/失败趋势
-    - duration-trend.json：耗时趋势
-    - retry-trend.json：重试趋势
-    - categories-trend.json：分类趋势
-    """
+    """保存测试结果历史趋势数据"""
     Utils.ensure_dir(HISTORY_DIR)
 
     build_name = datetime.now().strftime('%Y%m%d_%H%M%S')
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    # 统计测试结果
     total = 0
     passed = 0
     failed = 0
@@ -137,11 +127,9 @@ def _save_history(session, exitstatus):
                 failed += 1
             elif rep.skipped:
                 skipped += 1
-
             if hasattr(rep, 'duration'):
                 duration += rep.duration
 
-    # 1. history.json
     history_file = os.path.join(HISTORY_DIR, 'history.json')
     history = _load_json(history_file)
     history.append({
@@ -157,7 +145,6 @@ def _save_history(session, exitstatus):
     })
     _save_json(history_file, history[-100:])
 
-    # 2. history-trend.json
     trend_file = os.path.join(HISTORY_DIR, 'history-trend.json')
     trend = _load_json(trend_file)
     trend.append({
@@ -170,7 +157,6 @@ def _save_history(session, exitstatus):
     })
     _save_json(trend_file, trend[-100:])
 
-    # 3. duration-trend.json
     duration_file = os.path.join(HISTORY_DIR, 'duration-trend.json')
     duration_trend = _load_json(duration_file)
     duration_trend.append({
@@ -179,7 +165,6 @@ def _save_history(session, exitstatus):
     })
     _save_json(duration_file, duration_trend[-100:])
 
-    # 4. retry-trend.json
     retry_file = os.path.join(HISTORY_DIR, 'retry-trend.json')
     retry_trend = _load_json(retry_file)
     retry_trend.append({
@@ -188,7 +173,6 @@ def _save_history(session, exitstatus):
     })
     _save_json(retry_file, retry_trend[-100:])
 
-    # 5. categories-trend.json
     categories_file = os.path.join(HISTORY_DIR, 'categories-trend.json')
     categories_trend = _load_json(categories_file)
     categories_trend.append({
@@ -216,7 +200,6 @@ def pytest_sessionstart(session):
                     f"(UDID: {device.get('udid', 'N/A')})")
     logger.info("=" * 60)
 
-    # Allure 环境信息
     allure_dir = os.path.join(project_root, 'reports', 'allure-results')
     Utils.ensure_dir(allure_dir)
 
@@ -261,7 +244,6 @@ def pytest_sessionstart(session):
     with open(categories_path, 'w', encoding='utf-8') as f:
         json.dump(categories, f, ensure_ascii=False, indent=2)
 
-    # 恢复历史趋势数据
     _restore_history(allure_dir)
 
     if driver_manager.run_env == 'local':
@@ -281,7 +263,6 @@ def pytest_sessionfinish(session, exitstatus):
     if exception_summary['total_exceptions'] > 0:
         logger.info(f"异常总数: {exception_summary['total_exceptions']}")
 
-    # 保存历史趋势数据
     _save_history(session, exitstatus)
 
     logger.info("=" * 60)
@@ -294,7 +275,12 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture(scope="function")
 def driver(request) -> Generator[WebDriver, None, None]:
-    """WebDriver fixture"""
+    """
+    WebDriver fixture（带断线重连机制）
+
+    当 Driver 创建失败时自动重试，最多重试 MAX_RECONNECT_ATTEMPTS 次。
+    重试前会重启 Appium 服务（本地环境）。
+    """
     device_index = getattr(request, 'param', 0)
     if hasattr(request.config, 'option') and hasattr(request.config.option, 'device_index'):
         device_index = request.config.option.device_index
@@ -302,29 +288,49 @@ def driver(request) -> Generator[WebDriver, None, None]:
     driver_instance = None
     device_name = None
     udid = None
+    last_exception = None
 
-    try:
-        driver_instance = driver_manager.create_driver(device_index)
-        devices = driver_manager.devices_config.get('devices', [])
-        if device_index < len(devices):
-            device_name = devices[device_index].get('device_name', f'device_{device_index}')
-            udid = devices[device_index].get('udid', 'N/A')
+    # ========== 断线重连循环 ==========
+    for attempt in range(MAX_RECONNECT_ATTEMPTS):
+        try:
+            driver_instance = driver_manager.create_driver(device_index)
 
-        logger.info(f"测试用例 [{request.node.name}] 开始执行 (设备: {device_name})")
-        global_recovery_manager.driver_getter = lambda: driver_instance
+            devices = driver_manager.devices_config.get('devices', [])
+            if device_index < len(devices):
+                device_name = devices[device_index].get('device_name', f'device_{device_index}')
+                udid = devices[device_index].get('udid', 'N/A')
 
-        allure.dynamic.tag(f"Device:{device_name}")
-        allure.dynamic.tag(f"UDID:{udid}")
+            logger.info(f"测试用例 [{request.node.name}] 开始执行 (设备: {device_name})")
+            global_recovery_manager.driver_getter = lambda: driver_instance
 
-    except DeviceNotFoundError:
-        logger.error("设备未找到")
-        pytest.skip("跳过测试 - 设备未找到")
-    except DriverCreationError:
-        logger.error("Driver创建失败")
-        pytest.fail("Driver创建失败")
-    except AppiumConnectionError:
-        logger.error("Appium连接失败")
-        pytest.fail("Appium连接失败")
+            allure.dynamic.tag(f"Device:{device_name}")
+            allure.dynamic.tag(f"UDID:{udid}")
+
+            break  # 创建成功，退出重试循环
+
+        except DeviceNotFoundError:
+            logger.error("设备未找到（不可重试）")
+            pytest.skip("跳过测试 - 设备未找到")
+        except (AppiumConnectionError, DeviceOfflineError, DriverCreationError) as e:
+            last_exception = e
+            if attempt < MAX_RECONNECT_ATTEMPTS - 1:
+                logger.warning(
+                    f"Driver创建失败，第 {attempt + 1}/{MAX_RECONNECT_ATTEMPTS} 次重试: {e}"
+                )
+                # 关闭可能残留的 Driver
+                driver_manager.quit_all_drivers()
+                time.sleep(RECONNECT_DELAY * (attempt + 1))
+            else:
+                logger.error(f"Driver创建最终失败（已重试 {MAX_RECONNECT_ATTEMPTS} 次）: {e}")
+                if isinstance(e, AppiumConnectionError):
+                    pytest.fail(f"Appium连接失败: {e}")
+                elif isinstance(e, DeviceOfflineError):
+                    pytest.fail(f"设备离线: {e}")
+                else:
+                    pytest.fail(f"Driver创建失败: {e}")
+
+    if driver_instance is None:
+        pytest.fail(f"Driver创建失败: {last_exception}")
 
     yield driver_instance
 
