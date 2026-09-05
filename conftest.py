@@ -49,6 +49,19 @@ MAX_RECONNECT_ATTEMPTS = 3
 RECONNECT_DELAY = 2
 
 
+def _get_allure_dir(config) -> str:
+    """
+    获取 Allure 结果目录
+
+    优先从 pytest 命令行参数 --alluredir 获取，
+    确保与 Jenkins 流水线中的 --alluredir 一致。
+    """
+    allure_dir = config.getoption('--alluredir', default=None)
+    if allure_dir:
+        return os.path.abspath(allure_dir)
+    return os.path.join(project_root, 'reports', 'allure-results')
+
+
 def pytest_configure(config: Config):
     """Pytest配置钩子"""
     dirs_to_create = ['screenshots', 'reports/allure-results', 'reports/history', 'logs']
@@ -199,9 +212,12 @@ def pytest_sessionstart(session):
                     f"(UDID: {device.get('udid', 'N/A')})")
     logger.info("=" * 60)
 
-    allure_dir = os.path.join(project_root, 'reports', 'allure-results')
+    # 获取 Allure 结果目录（与 --alluredir 参数一致）
+    allure_dir = _get_allure_dir(session.config)
     Utils.ensure_dir(allure_dir)
+    logger.info(f"Allure结果目录: {allure_dir}")
 
+    # 1. environment.properties
     env_props = [
         f"RunEnv={driver_manager.run_env}",
         f"DeviceCount={driver_manager.get_device_count()}",
@@ -217,6 +233,7 @@ def pytest_sessionstart(session):
     with open(env_path, 'w', encoding='ISO-8859-1') as f:
         f.write('\n'.join(env_props))
 
+    # 2. executor.json
     executor_info = {
         "name": "APP_UI_Test Runner",
         "type": "pytest",
@@ -228,6 +245,7 @@ def pytest_sessionstart(session):
     with open(executor_path, 'w', encoding='utf-8') as f:
         json.dump(executor_info, f, ensure_ascii=False, indent=2)
 
+    # 3. categories.json
     categories = [
         {"name": "Test Failure", "matchedStatuses": ["failed"],
          "messageRegex": ".*AssertionError.*"},
@@ -243,6 +261,7 @@ def pytest_sessionstart(session):
     with open(categories_path, 'w', encoding='utf-8') as f:
         json.dump(categories, f, ensure_ascii=False, indent=2)
 
+    # 4. 恢复历史趋势数据
     _restore_history(allure_dir)
 
     if driver_manager.run_env == 'local':
@@ -378,7 +397,6 @@ def manage_smarthome_app(driver):
 
     yield
 
-    # 从 XML 读取包名，避免硬编码
     xml_config = Utils.load_xml("config/app_config.xml")
     root = xml_config.get('app_config', xml_config)
     app_config = root.get('app', {})
