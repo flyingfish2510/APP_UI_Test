@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 将 Allure 报告合并为单个 HTML 文件
-通过内联 CSS/JS 和数据 JSON，解决 file:// 协议下的 Loading... 问题
+通过内联 CSS/JS/数据 JSON/附件，解决 file:// 协议下的 Loading... 问题
 """
 
 import os
@@ -52,6 +52,8 @@ def inline_images(html: str, base_dir: str) -> str:
         'svg': 'image/svg+xml',
         'ico': 'image/x-icon',
         'webp': 'image/webp',
+        'txt': 'text/plain',
+        'json': 'application/json',
     }
 
     def replace(match):
@@ -65,19 +67,16 @@ def inline_images(html: str, base_dir: str) -> str:
             return f'src="data:{mime_map[ext]};base64,{img_data}"'
         return match.group(0)
 
-    pattern = r'src="([^"]*\.(png|jpg|jpeg|gif|svg|ico|webp))"'
+    pattern = r'src="([^"]*\.(png|jpg|jpeg|gif|svg|ico|webp|txt|json))"'
     return re.sub(pattern, replace, html)
 
 
 def collect_all_data_files(base_dir: str) -> dict:
     """
-    递归收集 data 目录下所有 JSON 数据文件
-
-    Args:
-        base_dir: Allure 报告目录
+    递归收集 data 目录下所有 JSON 数据文件和附件
 
     Returns:
-        dict: {相对路径: 文件内容}
+        dict: {相对路径: {content: str, is_binary: bool}}
     """
     data_dir = os.path.join(base_dir, 'data')
     data_files = {}
@@ -87,19 +86,49 @@ def collect_all_data_files(base_dir: str) -> dict:
 
     for root, dirs, files in os.walk(data_dir):
         for filename in files:
+            filepath = os.path.join(root, filename)
+            rel_path = os.path.relpath(filepath, base_dir).replace('\\', '/')
+
             if filename.endswith('.json'):
-                filepath = os.path.join(root, filename)
-                # 使用相对于 base_dir 的路径作为键
-                rel_path = os.path.relpath(filepath, base_dir).replace('\\', '/')
+                # JSON 文本文件
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
-                        data_files[rel_path] = f.read()
+                        data_files[rel_path] = {
+                            'content': f.read(),
+                            'type': 'json'
+                        }
                 except (IOError, UnicodeDecodeError):
-                    try:
-                        with open(filepath, 'rb') as f:
-                            data_files[rel_path] = base64.b64encode(f.read()).decode('utf-8')
-                    except IOError:
-                        pass
+                    # 二进制 JSON（不太可能）
+                    with open(filepath, 'rb') as f:
+                        data_files[rel_path] = {
+                            'content': base64.b64encode(f.read()).decode('utf-8'),
+                            'type': 'binary'
+                        }
+            else:
+                # 附件文件（截图、文本等）
+                try:
+                    with open(filepath, 'rb') as f:
+                        ext = os.path.splitext(filename)[1].lstrip('.').lower()
+                        mime_map = {
+                            'png': 'image/png',
+                            'jpg': 'image/jpeg',
+                            'jpeg': 'image/jpeg',
+                            'gif': 'image/gif',
+                            'svg': 'image/svg+xml',
+                            'txt': 'text/plain',
+                            'log': 'text/plain',
+                            'json': 'application/json',
+                            'mp4': 'video/mp4',
+                            'webm': 'video/webm',
+                        }
+                        mime = mime_map.get(ext, 'application/octet-stream')
+                        data_files[rel_path] = {
+                            'content': base64.b64encode(f.read()).decode('utf-8'),
+                            'type': 'binary',
+                            'mime': mime
+                        }
+                except IOError:
+                    pass
 
     return data_files
 
@@ -107,6 +136,7 @@ def collect_all_data_files(base_dir: str) -> dict:
 def inline_fetch_data(html: str, data_files: dict) -> str:
     """
     重写 fetch/XHR 请求，从内联数据中读取
+    支持 JSON 文本和二进制附件
     """
     if not data_files:
         return html
@@ -118,24 +148,16 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
 (function() {{
     var __ALLURE_DATA__ = {data_js};
 
-    // 从 URL 中提取路径（去掉域名和查询参数）
     function extractPath(url) {{
         var urlStr = String(url);
-        // 去掉查询参数
-        var cleanUrl = urlStr.split('?')[0];
-        // 去掉 hash
-        cleanUrl = cleanUrl.split('#')[0];
-        // 提取 data/ 之后的路径
+        var cleanUrl = urlStr.split('?')[0].split('#')[0];
         var dataIndex = cleanUrl.indexOf('data/');
         if (dataIndex !== -1) {{
             return cleanUrl.substring(dataIndex);
         }}
-        // 也尝试直接匹配文件名
-        var parts = cleanUrl.split('/');
-        return parts[parts.length - 1];
+        return cleanUrl;
     }}
 
-    // 查找匹配的数据
     function findData(url) {{
         var path = extractPath(url);
 
@@ -144,14 +166,7 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
             return __ALLURE_DATA__[path];
         }}
 
-        // 模糊匹配（子目录文件）
-        for (var key in __ALLURE_DATA__) {{
-            if (key.endsWith('/' + path) || path.endsWith(key)) {{
-                return __ALLURE_DATA__[key];
-            }}
-        }}
-
-        // 文件名匹配
+        // 模糊匹配
         var filename = path.split('/').pop();
         for (var key in __ALLURE_DATA__) {{
             if (key.endsWith(filename)) {{
@@ -162,15 +177,33 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
         return null;
     }}
 
+    function createResponse(dataInfo) {{
+        if (dataInfo.type === 'json') {{
+            return new Response(dataInfo.content, {{
+                status: 200,
+                headers: {{'Content-Type': 'application/json'}}
+            }});
+        }} else {{
+            // 二进制数据：解码 base64
+            var binaryString = atob(dataInfo.content);
+            var bytes = new Uint8Array(binaryString.length);
+            for (var i = 0; i < binaryString.length; i++) {{
+                bytes[i] = binaryString.charCodeAt(i);
+            }}
+            var mime = dataInfo.mime || 'application/octet-stream';
+            return new Response(bytes, {{
+                status: 200,
+                headers: {{'Content-Type': mime}}
+            }});
+        }}
+    }}
+
     // 拦截 fetch
     var originalFetch = window.fetch;
     window.fetch = function(url, options) {{
         var data = findData(url);
         if (data !== null) {{
-            return Promise.resolve(new Response(data, {{
-                status: 200,
-                headers: {{'Content-Type': 'application/json'}}
-            }}));
+            return Promise.resolve(createResponse(data));
         }}
         return originalFetch.apply(this, arguments);
     }};
@@ -187,24 +220,33 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
     XMLHttpRequest.prototype.send = function(body) {{
         if (this.__allureData__ !== null && this.__allureData__ !== undefined) {{
             var self = this;
-            var data = this.__allureData__;
+            var dataInfo = this.__allureData__;
+
             setTimeout(function() {{
                 try {{
-                    Object.defineProperty(self, 'responseText', {{value: data, writable: false}});
-                    Object.defineProperty(self, 'response', {{value: data, writable: false}});
+                    var content;
+                    if (dataInfo.type === 'json') {{
+                        content = dataInfo.content;
+                        self.responseType = 'text';
+                    }} else {{
+                        var binaryString = atob(dataInfo.content);
+                        var bytes = new Uint8Array(binaryString.length);
+                        for (var i = 0; i < binaryString.length; i++) {{
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }}
+                        content = bytes;
+                    }}
+
+                    Object.defineProperty(self, 'responseText', {{value: 
+                        dataInfo.type === 'json' ? content : '', writable: false}});
+                    Object.defineProperty(self, 'response', {{value: content, writable: false}});
                     Object.defineProperty(self, 'status', {{value: 200, writable: false}});
                     Object.defineProperty(self, 'statusText', {{value: 'OK', writable: false}});
                     Object.defineProperty(self, 'readyState', {{value: 4, writable: false}});
 
-                    if (self.onreadystatechange) {{
-                        self.onreadystatechange();
-                    }}
-                    if (self.onload) {{
-                        self.onload();
-                    }}
-                    if (self.onloadend) {{
-                        self.onloadend();
-                    }}
+                    if (self.onreadystatechange) self.onreadystatechange();
+                    if (self.onload) self.onload();
+                    if (self.onloadend) self.onloadend();
                 }} catch (e) {{
                     console.error('XHR 拦截失败:', e);
                 }}
@@ -231,11 +273,11 @@ def inline_all(html: str, base_dir: str) -> str:
     print("  内联图片...")
     html = inline_images(html, base_dir)
 
-    print("  递归收集数据文件...")
+    print("  递归收集数据文件和附件...")
     data_files = collect_all_data_files(base_dir)
-    print(f"  找到 {len(data_files)} 个数据文件")
-    for key in sorted(data_files.keys()):
-        print(f"    - {key}")
+    json_count = sum(1 for v in data_files.values() if v['type'] == 'json')
+    binary_count = sum(1 for v in data_files.values() if v['type'] == 'binary')
+    print(f"  找到 {len(data_files)} 个文件（JSON: {json_count}, 附件: {binary_count}）")
 
     print("  注入数据拦截器...")
     html = inline_fetch_data(html, data_files)
@@ -272,6 +314,7 @@ def main():
     file_size = os.path.getsize(output_file) / (1024 * 1024)
     print(f"\n单文件报告已生成: {output_file} ({file_size:.2f} MB)")
     print("可直接双击打开，无需服务器。")
+    print("包含：用例步骤、失败详情、失败截图")
 
 
 if __name__ == '__main__':
