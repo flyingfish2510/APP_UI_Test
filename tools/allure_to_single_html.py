@@ -3,6 +3,12 @@
 """
 将 Allure 报告合并为单个 HTML 文件
 通过内联 CSS/JS/数据 JSON/附件，解决 file:// 协议下的 Loading... 问题
+
+用法:
+    python tools/allure_to_single_html.py <allure-report目录> [输出文件路径]
+
+示例:
+    python tools/allure_to_single_html.py reports/allure-report reports/standalone_report.html
 """
 
 import os
@@ -14,7 +20,6 @@ import re
 
 def inline_css(html: str, base_dir: str) -> str:
     """将 <link href="*.css"> 内联为 <style>"""
-
     def replace(match):
         css_path = match.group(1)
         full_path = os.path.join(base_dir, css_path.lstrip('./').lstrip('/'))
@@ -29,7 +34,6 @@ def inline_css(html: str, base_dir: str) -> str:
 
 def inline_js(html: str, base_dir: str) -> str:
     """将 <script src="*.js"> 内联为 <script>"""
-
     def replace(match):
         js_path = match.group(1)
         full_path = os.path.join(base_dir, js_path.lstrip('./').lstrip('/'))
@@ -76,7 +80,7 @@ def collect_all_data_files(base_dir: str) -> dict:
     递归收集 data 目录下所有 JSON 数据文件和附件
 
     Returns:
-        dict: {相对路径: {content: str, is_binary: bool}}
+        dict: {相对路径: {content: str, type: str, mime: str}}
     """
     data_dir = os.path.join(base_dir, 'data')
     data_files = {}
@@ -84,44 +88,47 @@ def collect_all_data_files(base_dir: str) -> dict:
     if not os.path.exists(data_dir):
         return data_files
 
+    mime_map = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'svg': 'image/svg+xml',
+        'txt': 'text/plain',
+        'log': 'text/plain',
+        'json': 'application/json',
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'csv': 'text/csv',
+        'xml': 'application/xml',
+        'html': 'text/html',
+    }
+
     for root, dirs, files in os.walk(data_dir):
         for filename in files:
             filepath = os.path.join(root, filename)
             rel_path = os.path.relpath(filepath, base_dir).replace('\\', '/')
 
             if filename.endswith('.json'):
-                # JSON 文本文件
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
                         data_files[rel_path] = {
                             'content': f.read(),
-                            'type': 'json'
+                            'type': 'json',
+                            'mime': 'application/json'
                         }
                 except (IOError, UnicodeDecodeError):
-                    # 二进制 JSON（不太可能）
                     with open(filepath, 'rb') as f:
                         data_files[rel_path] = {
                             'content': base64.b64encode(f.read()).decode('utf-8'),
-                            'type': 'binary'
+                            'type': 'binary',
+                            'mime': 'application/json'
                         }
             else:
-                # 附件文件（截图、文本等）
+                ext = os.path.splitext(filename)[1].lstrip('.').lower()
+                mime = mime_map.get(ext, 'application/octet-stream')
                 try:
                     with open(filepath, 'rb') as f:
-                        ext = os.path.splitext(filename)[1].lstrip('.').lower()
-                        mime_map = {
-                            'png': 'image/png',
-                            'jpg': 'image/jpeg',
-                            'jpeg': 'image/jpeg',
-                            'gif': 'image/gif',
-                            'svg': 'image/svg+xml',
-                            'txt': 'text/plain',
-                            'log': 'text/plain',
-                            'json': 'application/json',
-                            'mp4': 'video/mp4',
-                            'webm': 'video/webm',
-                        }
-                        mime = mime_map.get(ext, 'application/octet-stream')
                         data_files[rel_path] = {
                             'content': base64.b64encode(f.read()).decode('utf-8'),
                             'type': 'binary',
@@ -151,22 +158,46 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
     function extractPath(url) {{
         var urlStr = String(url);
         var cleanUrl = urlStr.split('?')[0].split('#')[0];
+
         var dataIndex = cleanUrl.indexOf('data/');
         if (dataIndex !== -1) {{
             return cleanUrl.substring(dataIndex);
         }}
-        return cleanUrl;
+
+        var attachIndex = cleanUrl.indexOf('attachments/');
+        if (attachIndex !== -1) {{
+            return 'data/' + cleanUrl.substring(attachIndex);
+        }}
+
+        var parts = cleanUrl.split('/');
+        var filename = parts[parts.length - 1];
+
+        for (var key in __ALLURE_DATA__) {{
+            if (key.endsWith(filename)) {{
+                return key;
+            }}
+        }}
+
+        return filename;
     }}
 
     function findData(url) {{
         var path = extractPath(url);
 
-        // 精确匹配
         if (path in __ALLURE_DATA__) {{
             return __ALLURE_DATA__[path];
         }}
 
-        // 模糊匹配
+        var dataPath = 'data/' + path;
+        if (dataPath in __ALLURE_DATA__) {{
+            return __ALLURE_DATA__[dataPath];
+        }}
+
+        var attachPath = 'data/attachments/' + path.split('/').pop();
+        if (attachPath in __ALLURE_DATA__) {{
+            return __ALLURE_DATA__[attachPath];
+        }}
+
         var filename = path.split('/').pop();
         for (var key in __ALLURE_DATA__) {{
             if (key.endsWith(filename)) {{
@@ -177,6 +208,15 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
         return null;
     }}
 
+    function base64ToUint8Array(base64) {{
+        var binaryString = atob(base64);
+        var bytes = new Uint8Array(binaryString.length);
+        for (var i = 0; i < binaryString.length; i++) {{
+            bytes[i] = binaryString.charCodeAt(i);
+        }}
+        return bytes;
+    }}
+
     function createResponse(dataInfo) {{
         if (dataInfo.type === 'json') {{
             return new Response(dataInfo.content, {{
@@ -184,12 +224,7 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
                 headers: {{'Content-Type': 'application/json'}}
             }});
         }} else {{
-            // 二进制数据：解码 base64
-            var binaryString = atob(dataInfo.content);
-            var bytes = new Uint8Array(binaryString.length);
-            for (var i = 0; i < binaryString.length; i++) {{
-                bytes[i] = binaryString.charCodeAt(i);
-            }}
+            var bytes = base64ToUint8Array(dataInfo.content);
             var mime = dataInfo.mime || 'application/octet-stream';
             return new Response(bytes, {{
                 status: 200,
@@ -198,7 +233,6 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
         }}
     }}
 
-    // 拦截 fetch
     var originalFetch = window.fetch;
     window.fetch = function(url, options) {{
         var data = findData(url);
@@ -208,7 +242,6 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
         return originalFetch.apply(this, arguments);
     }};
 
-    // 拦截 XMLHttpRequest
     var originalOpen = XMLHttpRequest.prototype.open;
     var originalSend = XMLHttpRequest.prototype.send;
 
@@ -227,22 +260,30 @@ def inline_fetch_data(html: str, data_files: dict) -> str:
                     var content;
                     if (dataInfo.type === 'json') {{
                         content = dataInfo.content;
-                        self.responseType = 'text';
                     }} else {{
-                        var binaryString = atob(dataInfo.content);
-                        var bytes = new Uint8Array(binaryString.length);
-                        for (var i = 0; i < binaryString.length; i++) {{
-                            bytes[i] = binaryString.charCodeAt(i);
-                        }}
-                        content = bytes;
+                        content = base64ToUint8Array(dataInfo.content);
                     }}
 
-                    Object.defineProperty(self, 'responseText', {{value: 
-                        dataInfo.type === 'json' ? content : '', writable: false}});
-                    Object.defineProperty(self, 'response', {{value: content, writable: false}});
-                    Object.defineProperty(self, 'status', {{value: 200, writable: false}});
-                    Object.defineProperty(self, 'statusText', {{value: 'OK', writable: false}});
-                    Object.defineProperty(self, 'readyState', {{value: 4, writable: false}});
+                    Object.defineProperty(self, 'responseText', {{
+                        value: dataInfo.type === 'json' ? content : '',
+                        writable: false
+                    }});
+                    Object.defineProperty(self, 'response', {{
+                        value: content,
+                        writable: false
+                    }});
+                    Object.defineProperty(self, 'status', {{
+                        value: 200,
+                        writable: false
+                    }});
+                    Object.defineProperty(self, 'statusText', {{
+                        value: 'OK',
+                        writable: false
+                    }});
+                    Object.defineProperty(self, 'readyState', {{
+                        value: 4,
+                        writable: false
+                    }});
 
                     if (self.onreadystatechange) self.onreadystatechange();
                     if (self.onload) self.onload();
