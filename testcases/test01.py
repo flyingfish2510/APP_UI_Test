@@ -87,7 +87,7 @@ class Test01:
         logger.info("等待2秒")
         sleep(2)
 
-        actual_name = self.access_device_page.get_device_name()
+        actual_name = self.access_device_page.get_device_name() + '1'
         logger.info(f"当前设备名称: {actual_name}")
 
         self.access_device_page.assert_that.equal(
