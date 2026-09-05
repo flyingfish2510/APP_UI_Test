@@ -124,53 +124,13 @@ class TestRunner:
             logger.error(f"测试执行异常: {e}")
             return 1
 
-    def generate_standalone_report(self) -> str:
-        """
-        生成可单独打开的 HTML 报告
-
-        使用 tools/allure_to_single_html.py 将 Allure 报告内联为单文件。
-
-        Returns:
-            str: 单文件报告路径，失败返回 None
-        """
-        standalone_file = os.path.join(self.project_root, 'reports', 'standalone_report.html')
-
-        try:
-            script_path = os.path.join(self.project_root, 'tools', 'allure_to_single_html.py')
-
-            if not os.path.exists(script_path):
-                logger.error(f"未找到转换脚本: {script_path}")
-                return None
-
-            logger.info("正在生成可单独打开的报告...")
-            result = subprocess.run(
-                [sys.executable, script_path, self.report_dir, standalone_file],
-                capture_output=True,
-                text=True,
-                cwd=self.project_root
-            )
-
-            if result.returncode == 0:
-                logger.info(f"单文件报告已生成: {standalone_file}")
-                return standalone_file
-            else:
-                logger.error(f"生成单文件报告失败: {result.stderr}")
-                return None
-        except Exception as e:
-            logger.error(f"生成单文件报告异常: {e}")
-            return None
-
     def generate_report(self, open_report: bool = False):
-        """生成Allure报告（完整版 + 单文件版）"""
+        """生成Allure报告"""
         if not os.path.exists(self.results_dir) or not os.listdir(self.results_dir):
             logger.warning("没有测试结果，跳过报告生成")
             return
 
-        # 1. 生成完整 Allure 报告（本地/在线查看）
         Utils.generate_allure_report(self.results_dir, self.report_dir)
-
-        # 2. 生成单文件报告（邮件发送/手机查看）
-        self.generate_standalone_report()
 
         if open_report:
             self.open_report()
@@ -189,9 +149,6 @@ class TestRunner:
         for path in [self.results_dir, self.report_dir]:
             if os.path.exists(path):
                 shutil.rmtree(path)
-        standalone_file = os.path.join(self.project_root, 'reports', 'standalone_report.html')
-        if os.path.exists(standalone_file):
-            os.remove(standalone_file)
         Utils.ensure_dir(self.results_dir)
 
     @staticmethod
