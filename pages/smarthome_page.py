@@ -3,6 +3,7 @@
 参数值从 config/app_config.xml 读取
 """
 
+from time import sleep
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import TimeoutException
 from core.base_page import BasePage, log_step
@@ -36,6 +37,9 @@ class SmartHomePage(BasePage):
         self.HOME_TAB_NAME = page_load_config.get('home_tab_name', '')
         self.PAGE_LOAD_TIMEOUT = int(page_load_config.get('timeout', 30))
         self.DEFAULT_DEVICE_NAME = root.get('default_device', '')
+
+        # 是否国内环境：true=国内，false=国外
+        self.IS_DOMESTIC = root.get('is_domestic', 'true').lower() == 'true'
 
         self.NAV_HOME_TAB = nav_config.get('home_tab', '')
         self.NAV_PRODUCT_TAB = nav_config.get('product_tab', '')
@@ -97,6 +101,14 @@ class SmartHomePage(BasePage):
     def wait_for_page_load(self, wait_timeout: int = None):
         """等待页面加载完成"""
         wait_timeout = wait_timeout or self.PAGE_LOAD_TIMEOUT
+
+        # 国外环境：直接等待 5 秒，不检查"家居"元素
+        if not self.IS_DOMESTIC:
+            self.logger.info("国外环境，直接等待5秒...")
+            sleep(5)
+            return
+
+        # 国内环境：通过"家居"元素判断
         self.logger.info(f"等待页面加载，标识元素: '{self.HOME_TAB_NAME}'...")
 
         try:
