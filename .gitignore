@@ -33,5 +33,6 @@ screenshots/
 .DS_Store
 
 # 本地调试文件
+test_cases.txt
 /APP_UI_Test_config.xml
 /jenkins.yaml
