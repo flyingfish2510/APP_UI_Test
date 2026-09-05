@@ -54,6 +54,7 @@ class TestRunner:
         parser.add_argument('--maxfail', type=int, default=5, help='最大失败数后停止')
         parser.add_argument('--timeout', type=int, default=300, help='单个测试超时时间（秒）')
         parser.add_argument('--case-file', type=str, default=None, help='用例列表文件路径')
+        parser.add_argument('--no-single-file', action='store_true', help='不生成单文件HTML报告')
 
         return parser.parse_args()
 
@@ -114,7 +115,7 @@ class TestRunner:
                 logger.warning(f"测试执行完毕，退出码: {exit_code}")
 
             if not args.no_report:
-                self.generate_report(args.open_report)
+                self.generate_report(args.open_report, args.no_single_file)
 
             return exit_code
         except KeyboardInterrupt:
@@ -124,12 +125,64 @@ class TestRunner:
             logger.error(f"测试执行异常: {e}")
             return 1
 
-    def generate_report(self, open_report: bool = False):
-        """生成Allure报告"""
+    def generate_single_file_report(self) -> str:
+        """
+        生成单文件 HTML 报告（用于邮件发送）
+
+        使用 allure-combine 将 Allure 报告合并为单个 HTML 文件。
+        本地查看仍使用完整的 Allure 报告，仅邮件发送时使用此单文件。
+
+        Returns:
+            str: 单文件报告路径，失败返回 None
+        """
+        import shutil
+
+        single_file = os.path.join(self.project_root, 'reports', 'complete.html')
+
+        try:
+            cmd = f'allure-combine {self.report_dir}'
+            logger.info("正在生成单文件报告...")
+
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                generated_file = os.path.join(self.report_dir, 'complete.html')
+                if os.path.exists(generated_file):
+                    shutil.move(generated_file, single_file)
+                    logger.info(f"单文件报告已生成: {single_file}")
+                    return single_file
+                else:
+                    logger.warning("单文件报告生成失败，未找到 complete.html")
+                    return None
+            else:
+                logger.error(f"生成单文件报告失败: {result.stderr}")
+                return None
+        except FileNotFoundError:
+            logger.error("allure-combine 未安装，请执行: npm install -g allure-combine")
+            return None
+        except Exception as e:
+            logger.error(f"生成单文件报告异常: {e}")
+            return None
+
+    def generate_report(self, open_report: bool = False, no_single_file: bool = False):
+        """
+        生成报告
+
+        Args:
+            open_report: 是否自动打开报告
+            no_single_file: 是否跳过单文件报告生成
+        """
         if not os.path.exists(self.results_dir) or not os.listdir(self.results_dir):
             logger.warning("没有测试结果，跳过报告生成")
             return
+
+        # 1. 生成完整 Allure 报告（本地查看）
         Utils.generate_allure_report(self.results_dir, self.report_dir)
+
+        # 2. 生成单文件报告（邮件发送）
+        if not no_single_file:
+            self.generate_single_file_report()
+
         if open_report:
             self.open_report()
 
@@ -147,6 +200,9 @@ class TestRunner:
         for path in [self.results_dir, self.report_dir]:
             if os.path.exists(path):
                 shutil.rmtree(path)
+        single_file = os.path.join(self.project_root, 'reports', 'complete.html')
+        if os.path.exists(single_file):
+            os.remove(single_file)
         Utils.ensure_dir(self.results_dir)
 
     @staticmethod
