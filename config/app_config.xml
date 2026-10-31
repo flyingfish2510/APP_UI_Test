@@ -4,12 +4,12 @@
         <package>com.huawei.smarthome</package>
     </app>
     <!-- 是否国内环境：true=国内，false=国外 -->
-    <is_domestic>false</is_domestic>
+    <is_domestic>true</is_domestic>
     <page_load>
         <home_tab_name>家居</home_tab_name>
         <timeout>30</timeout>
     </page_load>
-    <default_device>HUAWEI WiFi Mesh X3 Pro</default_device>
+    <default_device>路由 X2</default_device>
     <navigation>
         <home_tab>家居</home_tab>
         <product_tab>产品</product_tab>
@@ -18,7 +18,7 @@
         <me_tab>我的</me_tab>
     </navigation>
     <test_data>
-        <original_name>HUAWEI nova 8</original_name>
+        <original_name>HUAWEI Mate 70</original_name>
         <new_name>貂蝉西施Abc123@😊</new_name>
     </test_data>
     <wifi>
