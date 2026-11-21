@@ -36,3 +36,6 @@ screenshots/
 test_cases.txt
 /APP_UI_Test_config.xml
 /jenkins.yaml
+
+# Jenkins/Docker 本地配置
+.env

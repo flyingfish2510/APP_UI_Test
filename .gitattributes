@@ -1,0 +1,19 @@
+# 防止 Windows 检出把脚本转成 CRLF，导致 Linux 容器里出现 "bad interpreter"
+*.sh          text eol=lf
+Dockerfile*   text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.groovy      text eol=lf
+Jenkinsfile   text eol=lf
+
+# 容器内按行读取 / 解析的清单文件，必须保持 LF
+*.lock        text eol=lf
+*.txt         text eol=lf
+*.json        text eol=lf
+.dockerignore text eol=lf
+.env.example  text eol=lf
+
+# PowerShell / 批处理保持 CRLF
+*.ps1         text eol=crlf
+*.bat         text eol=crlf
+*.cmd         text eol=crlf

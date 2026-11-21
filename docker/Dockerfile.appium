@@ -1,0 +1,40 @@
+# Appium 2 + UiAutomator2 + adb（仅 Linux 主机 USB 直通时使用）
+FROM node:20-bookworm-slim
+
+ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+
+ENV TZ=Asia/Shanghai \
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+
+RUN set -eux; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+        if [ -f "$f" ]; then \
+            sed -i \
+                -e "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" \
+                -e "s|https://deb.debian.org|${DEBIAN_MIRROR}|g" \
+                -e "s|http://security.debian.org|${DEBIAN_MIRROR}|g" \
+                -e "s|https://security.debian.org|${DEBIAN_MIRROR}|g" \
+                "$f"; \
+        fi; \
+    done; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends adb usbutils curl ca-certificates tzdata; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    npm config set registry "${NPM_REGISTRY}"; \
+    npm config set fetch-retries 3; \
+    npm install -g --no-fund --no-audit \
+        "appium@2" \
+        "appium-uiautomator2-driver@3"; \
+    npm cache clean --force
+
+COPY docker/appium-entrypoint.sh /usr/local/bin/appium-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/appium-entrypoint.sh
+
+EXPOSE 4723
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=10 \
+    CMD curl -fsS http://127.0.0.1:4723/status || exit 1
+
+ENTRYPOINT ["bash", "/usr/local/bin/appium-entrypoint.sh"]

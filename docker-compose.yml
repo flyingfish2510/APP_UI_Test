@@ -1,30 +1,68 @@
-version: '3.8'
+name: app-ui-test
 
 services:
-  appium:
-    image: appium/appium:latest
-    container_name: appium-server
-    privileged: true
+  jenkins:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.jenkins
+    image: app-ui-test/jenkins:2.591-py313
+    container_name: app-ui-jenkins
+    restart: unless-stopped
+    # 用 root 运行，避免 Linux 宿主 bind mount 的 uid 不匹配（Windows 无影响）
+    user: root
     ports:
-      - "4723:4723"
+      - "${JENKINS_HTTP_PORT:-8080}:8080"
+      - "${JENKINS_AGENT_PORT:-50000}:50000"
+    environment:
+      TZ: Asia/Shanghai
+      JAVA_OPTS: >-
+        -Duser.timezone=Asia/Shanghai
+        -Dfile.encoding=UTF-8
+        -Dsun.jnu.encoding=UTF-8
+        -Djenkins.install.runSetupWizard=false
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc/casc.yaml
+      JENKINS_ADMIN_PASSWORD: "${JENKINS_ADMIN_PASSWORD:-ChangeMe_123}"
+      JENKINS_URL: "${JENKINS_URL:-http://localhost:8080/}"
+      APPIUM_HOST: "${APPIUM_HOST:-http://host.docker.internal:4723}"
+      MAIL_TO: "${MAIL_TO:-}"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - ./:/workspace
+      - ./jenkins:/var/jenkins_home/casc:ro
+      - ./jenkins/init:/var/jenkins_home/init.groovy.d:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # 仅 Linux 主机可用：USB 直通给容器内的 adb
+  # 启动：docker compose --profile appium up -d（并把 .env 的 APPIUM_HOST 改成 http://appium:4723）
+  appium:
+    profiles: ["appium"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.appium
+    image: app-ui-test/appium:2
+    container_name: app-ui-appium
+    restart: unless-stopped
+    privileged: true
+    environment:
+      TZ: Asia/Shanghai
+      APPIUM_PORT: "4723"
     volumes:
       - /dev/bus/usb:/dev/bus/usb
-    environment:
-      - APPIUM_HOST=0.0.0.0
-      - APPIUM_PORT=4723
-    network_mode: host
+    ports:
+      - "4723:4723"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:4723/status >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
-  test-runner:
-    build: .
-    container_name: app-ui-test-runner
-    depends_on:
-      - appium
-    environment:
-      - RUN_ENV=docker
-      - CI=true
-      - APPIUM_HOST=http://appium:4723
-    volumes:
-      - ./reports:/app/reports
-      - ./screenshots:/app/screenshots
-      - ./logs:/app/logs
-    command: python run_tests.py --env docker
+volumes:
+  jenkins_home:

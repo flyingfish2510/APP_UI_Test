@@ -1,0 +1,89 @@
+# Jenkins + Python 测试运行环境（国内镜像加速版）
+#
+# 基础镜像默认用 jenkins/jenkins:2.555.3-jdk21（Debian 13 / Python 3.13）。
+# 若想用 Debian 12 / Python 3.11，可覆盖：--build-arg BASE_IMAGE=jenkins/jenkins:2.462.3-lts-jdk17
+ARG BASE_IMAGE=jenkins/jenkins:2.555.3-jdk21
+FROM ${BASE_IMAGE}
+
+ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+ARG PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_HOST=pypi.tuna.tsinghua.edu.cn
+ARG JENKINS_UC=https://mirrors.huaweicloud.com/jenkins
+ARG JENKINS_VERSION=2.591
+ARG ALLURE_VERSION=2.29.0
+
+USER root
+
+ENV TZ=Asia/Shanghai \
+    LANG=C.UTF-8 \
+    PIP_INDEX_URL=${PIP_INDEX} \
+    PIP_TRUSTED_HOST=${PIP_HOST} \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# 1) apt 换清华源，装 Python / git / curl
+RUN set -eux; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+        if [ -f "$f" ]; then \
+            sed -i \
+                -e "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" \
+                -e "s|https://deb.debian.org|${DEBIAN_MIRROR}|g" \
+                -e "s|http://security.debian.org|${DEBIAN_MIRROR}|g" \
+                -e "s|https://security.debian.org|${DEBIAN_MIRROR}|g" \
+                "$f"; \
+        fi; \
+    done; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        python3 python3-venv python3-pip \
+        git curl ca-certificates tzdata unzip xz-utils; \
+    rm -rf /var/lib/apt/lists/*
+
+# 2) 升级 Jenkins 内核：本地基础镜像为 2.555.3，而当前插件普遍要求 ≥2.589
+#    war 从华为云镜像下载（约 52MB，国内速度快）
+RUN curl -fsSL --retry 3 --connect-timeout 10 \
+        "${JENKINS_UC}/war/${JENKINS_VERSION}/jenkins.war" \
+        -o /usr/share/jenkins/jenkins.war && \
+    ls -lh /usr/share/jenkins/jenkins.war
+
+# 3) 独立 venv + 依赖
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+COPY requirements.txt /tmp/requirements.txt
+
+# Python 3.13 下 psutil 5.9.8 / PyYAML 6.0.1 没有 cp313 wheel，升到兼容版本
+# （项目只用到 psutil.cpu_percent/virtual_memory 与 yaml.safe_load，API 不变）
+RUN --mount=type=cache,target=/root/.cache/pip \
+    sed -i -E 's/^psutil==.*/psutil>=6.1/; s/^PyYAML==.*/PyYAML>=6.0.2/' /tmp/requirements.txt && \
+    /opt/venv/bin/pip install --upgrade pip setuptools wheel && \
+    /opt/venv/bin/pip install -r /tmp/requirements.txt
+
+# 3) Allure CLI：走阿里云 Maven 镜像，失败回退 Maven Central（不依赖 GitHub）
+RUN set -eux; \
+    a="https://maven.aliyun.com/repository/public/io/qameta/allure/allure-commandline/${ALLURE_VERSION}/allure-commandline-${ALLURE_VERSION}.tgz"; \
+    b="https://repo1.maven.org/maven2/io/qameta/allure/allure-commandline/${ALLURE_VERSION}/allure-commandline-${ALLURE_VERSION}.tgz"; \
+    if curl -fsSL --retry 3 --connect-timeout 10 "$a" -o /tmp/allure.tgz \
+       || curl -fsSL --retry 3 --connect-timeout 10 "$b" -o /tmp/allure.tgz; then \
+        mkdir -p /opt/allure; \
+        tar -xzf /tmp/allure.tgz -C /opt/allure --strip-components=1; \
+        ln -sf /opt/allure/bin/allure /usr/local/bin/allure; \
+        rm -f /tmp/allure.tgz; \
+        allure --version; \
+    else \
+        echo "WARN: Allure CLI 下载失败，跳过（Jenkins Allure 插件将不可用）"; \
+    fi
+
+# 5) Jenkins 插件：按 lock 文件用 curl 直接下载
+#    （jenkins-plugin-cli 在此网络环境下会把镜像文件判为 invalid ZIP，改为自行下载更可靠）
+COPY docker/plugins.lock /tmp/plugins.lock
+RUN set -eux; \
+    mkdir -p /usr/share/jenkins/ref/plugins; \
+    while IFS='|' read -r name version url; do \
+        case "$name" in ''|'#'*) continue ;; esac; \
+        echo "fetching ${name}:${version}"; \
+        curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 "$url" \
+             -o "/usr/share/jenkins/ref/plugins/${name}.jpi"; \
+    done < /tmp/plugins.lock; \
+    ls /usr/share/jenkins/ref/plugins | wc -l
+
+USER jenkins

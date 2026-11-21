@@ -1,0 +1,5 @@
+# 构建上下文只保留 requirements.txt 和 docker/，避免把 .venv / 报告 / 截图 传给 daemon
+*
+!requirements.txt
+!docker
+!docker/**

@@ -1,0 +1,38 @@
+jenkins:
+  systemMessage: "APP_UI_Test 定时回归（Docker / Asia/Shanghai）"
+  numExecutors: 2
+  mode: NORMAL
+  scmCheckoutRetryCount: 2
+  quietPeriod: 5
+  disabledAdministrativeMonitors:
+    - "jenkins.diagnostics.ControllerExecutorsNoAgents"
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD:-ChangeMe_123}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "APPIUM_HOST"
+            value: "${APPIUM_HOST:-http://host.docker.internal:4723}"
+          - key: "MAIL_TO"
+            value: "${MAIL_TO:-}"
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8080/}"
+
+# Allure 插件使用的命令行（镜像内已装到 /opt/allure）
+tool:
+  allure:
+    installations:
+      - name: "allure"
+        home: "/opt/allure"
+
+# 说明：定时任务由 jenkins/init/create-job.groovy 在启动时创建
+# （CasC 的 jobs 功能需要 workspace，容器内不可用）

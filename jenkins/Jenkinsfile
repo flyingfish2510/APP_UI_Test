@@ -1,0 +1,122 @@
+// APP_UI_Test 定时回归流水线（Jenkins in Docker + Appium）
+// 定时触发在 jenkins/jobs.groovy 中定义，此处不再声明 triggers，避免重复触发。
+pipeline {
+    agent {
+        node {
+            // 关键：直接使用挂载进容器的项目目录，规避项目对 CWD 的依赖
+            label 'built-in'
+            customWorkspace '/workspace'
+        }
+    }
+
+    options {
+        timestamps()
+        ansiColor('xterm')
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30', daysToKeepStr: '30'))
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+
+    parameters {
+        choice(name: 'TEST_MARKER', choices: ['smoke', 'regression', 'p0', 'p1', 'p2', 'p3', 'all'],
+               description: '按 pytest 标记筛选用例')
+        string(name: 'RERUNS', defaultValue: '0', description: '失败重跑次数')
+        string(name: 'PYTEST_TIMEOUT', defaultValue: '300', description: '单用例超时（秒）')
+        booleanParam(name: 'CLEAN_ARTIFACTS', defaultValue: true, description: '开始前清理旧报告/截图')
+    }
+
+    environment {
+        TZ               = 'Asia/Shanghai'
+        RUN_ENV          = 'docker'
+        PYTHON           = '/opt/venv/bin/python'
+        PYTHONIOENCODING = 'utf-8'
+    }
+
+    stages {
+        stage('准备') {
+            steps {
+                script {
+                    def clean = (params.CLEAN_ARTIFACTS == null) ? true : params.CLEAN_ARTIFACTS
+                    sh """
+                        set -eu
+                        test -f pytest.ini          || { echo '缺少 pytest.ini，工作区: '\$(pwd); exit 1; }
+                        test -f config/config.yaml  || { echo '缺少 config/config.yaml'; exit 1; }
+                        mkdir -p reports logs screenshots
+                        if [ '${clean}' = 'true' ]; then
+                            rm -rf reports/allure-results reports/allure-report reports/junit.xml
+                            find screenshots -type f -name '*.png' -mtime +7 -delete 2>/dev/null || true
+                        fi
+                    """
+                    echo "Python: ${sh(script: "${PYTHON} --version", returnStdout: true).trim()}"
+                }
+            }
+        }
+
+        stage('环境检查') {
+            steps {
+                sh '''
+                    set -eu
+                    APPIUM_URL="${APPIUM_HOST:-http://host.docker.internal:4723}"
+                    echo "Appium: ${APPIUM_URL}"
+                    curl -fsS --max-time 8 "${APPIUM_URL}/status" > /dev/null \
+                        || { echo "Appium 不可达：${APPIUM_URL}（Windows 请先在宿主机启动 Appium）"; exit 1; }
+                    "${PYTHON}" -c "import sys, pytest, selenium; print(sys.version.split()[0], '| selenium', selenium.__version__, '| pytest', pytest.__version__)"
+                '''
+            }
+        }
+
+        stage('执行测试') {
+            steps {
+                script {
+                    def marker    = (params.TEST_MARKER ?: 'all').toString().trim()
+                    def reruns    = (params.RERUNS ?: '0').toString().trim()
+                    def tmo       = (params.PYTEST_TIMEOUT ?: '300').toString().trim()
+                    def markerArg = (marker == 'all') ? '' : "-m ${marker}"
+                    def cmd = """
+                        set -o pipefail
+                        ${PYTHON} -m pytest testcases/ \
+                            ${markerArg} \
+                            --alluredir=reports/allure-results \
+                            --clean-alluredir \
+                            --junitxml=reports/junit.xml \
+                            --timeout=${tmo} \
+                            --reruns ${reruns} --reruns-delay 3 \
+                            --maxfail=0 \
+                            -p no:cacheprovider \
+                            --tb=short --disable-warnings -q
+                    """
+                    echo cmd
+                    sh cmd
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                allure includeProperties: false, jdk: '', results: [[path: 'reports/allure-results']]
+            }
+            archiveArtifacts artifacts: 'logs/*.log, reports/junit.xml', allowEmptyArchive: true
+        }
+        failure {
+            script {
+                if (env.MAIL_TO?.trim()) {
+                    try {
+                        emailext(
+                            to: env.MAIL_TO,
+                            subject: "[失败] ${env.JOB_NAME} #${env.BUILD_NUMBER} (${params.TEST_MARKER})",
+                            body: "构建: <a href='${env.BUILD_URL}'>${env.BUILD_URL}</a><br/>Allure: <a href='${env.BUILD_URL}allure/'>${env.BUILD_URL}allure/</a>",
+                            mimeType: 'text/html',
+                            attachLog: true
+                        )
+                    } catch (e) {
+                        echo "邮件发送失败（请检查系统管理 → 系统配置 → 邮件）：${e}"
+                    }
+                }
+            }
+        }
+    }
+}
