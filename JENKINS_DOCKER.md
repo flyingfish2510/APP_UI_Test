@@ -94,7 +94,7 @@ docker compose up -d
 
 **为什么升级内核**：基础镜像 2.555.3 低于当前插件的 `requiredCore`（2.589），构建时下载 2.591 war 覆盖 `/usr/share/jenkins/jenkins.war`。
 
-**Python 3.13 适配**：基础镜像是 Debian 13，`psutil==5.9.8` 和 `PyYAML==6.0.1` 没有 cp313 wheel，镜像内升级为 `psutil>=6.1`、`PyYAML>=6.0.2`（项目只用到 `cpu_percent/virtual_memory` 与 `yaml.safe_load`，API 不变）。
+**Python 3.13 兼容**：基础镜像是 Debian 13（Python 3.13），`requirements.txt` 已锁定 `psutil==7.2.2`、`PyYAML==6.0.2`（均提供 cp313 wheel），构建时不再改写版本。
 
 ## 7. 与项目代码的适配点
 

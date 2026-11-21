@@ -46,19 +46,15 @@ RUN curl -fsSL --retry 3 --connect-timeout 10 \
         -o /usr/share/jenkins/jenkins.war && \
     ls -lh /usr/share/jenkins/jenkins.war
 
-# 3) 独立 venv + 依赖
+# 3) 独立 venv + 依赖（requirements 已锁定带 cp313 wheel 的版本）
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 COPY requirements.txt /tmp/requirements.txt
-
-# Python 3.13 下 psutil 5.9.8 / PyYAML 6.0.1 没有 cp313 wheel，升到兼容版本
-# （项目只用到 psutil.cpu_percent/virtual_memory 与 yaml.safe_load，API 不变）
 RUN --mount=type=cache,target=/root/.cache/pip \
-    sed -i -E 's/^psutil==.*/psutil>=6.1/; s/^PyYAML==.*/PyYAML>=6.0.2/' /tmp/requirements.txt && \
     /opt/venv/bin/pip install --upgrade pip setuptools wheel && \
     /opt/venv/bin/pip install -r /tmp/requirements.txt
 
-# 3) Allure CLI：走阿里云 Maven 镜像，失败回退 Maven Central（不依赖 GitHub）
+# 4) Allure CLI：走阿里云 Maven 镜像，失败回退 Maven Central（不依赖 GitHub）
 RUN set -eux; \
     a="https://maven.aliyun.com/repository/public/io/qameta/allure/allure-commandline/${ALLURE_VERSION}/allure-commandline-${ALLURE_VERSION}.tgz"; \
     b="https://repo1.maven.org/maven2/io/qameta/allure/allure-commandline/${ALLURE_VERSION}/allure-commandline-${ALLURE_VERSION}.tgz"; \
