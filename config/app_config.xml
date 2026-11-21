@@ -6,12 +6,12 @@
     <!-- 是否国内环境：true=国内，false=国外 -->
     <is_domestic>true</is_domestic>
     <page_load>
-        <home_tab_name>家居</home_tab_name>
+        <home_tab_name>首页</home_tab_name>
         <timeout>30</timeout>
     </page_load>
     <default_device>路由 X2</default_device>
     <navigation>
-        <home_tab>家居</home_tab>
+        <home_tab>首页</home_tab>
         <product_tab>产品</product_tab>
         <discover_tab>发现</discover_tab>
         <scene_tab>场景</scene_tab>
