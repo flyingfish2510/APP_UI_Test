@@ -1,117 +1,95 @@
-# Docker 版 Jenkins：定时运行 APP_UI_Test
+﻿# Jenkins锛圖ocker 鎺у埗鍣級+ Windows agent锛氬畾鏃惰繍琛?APP_UI_Test
 
-> 已在本机构建并验证：镜像 `app-ui-test/jenkins:2.591-py313`（1.39 GB），容器 `app-ui-jenkins` healthy，
-> 任务 `APP_UI_Test` 已创建（cron `H 13 * * *`）。首次验证构建失败于「设备未连接」，属环境原因，不是容器问题。
-
-## 1. 架构
+> 宸查獙璇侊細鏋勫缓 #12 鍦?`windows-host` 涓婇€氳繃锛坄1 passed, 2 deselected`锛夛紝Appium 闅忔瀯寤鸿嚜鍚€佺粨鏉熷悗鑷姩鍋滄锛孉llure 鎶ュ憡鍦ㄥ涓绘満鐢熸垚骞跺綊妗ｃ€?
+## 1. 鏋舵瀯
 
 ```
-┌──────────── Docker ────────────┐          ┌──────────────┐
-│ Jenkins 容器 (jenkins 2.591)    │  HTTP    │ Appium 服务   │  ADB   ┌────────────┐
-│  - Python 3.13 + /opt/venv      │ ───────> │ :4723        │ ─────> │ Android 设备 │
-│  - Allure 插件 / CLI            │          │ 宿主机        │        └────────────┘
-│  - /workspace = 项目挂载目录     │          └──────────────┘
-└────────────────────────────────┘
-```
+鈹屸攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ Docker 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?        鈹屸攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ Windows 瀹夸富鏈?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?鈹?Jenkins 鎺у埗鍣?                 鈹? JNLP   鈹?Jenkins agent (scripts/jenkins-agent)  鈹?鈹?- 2.591 / 8080                  鈹?<鈹€鈹€鈹€鈹€鈹€> 鈹? - 鎵ц pytest锛堥」鐩?.venv锛?          鈹?鈹?- JCasC / 瀹氭椂浠诲姟 / Allure 鎻掍欢 鈹?        鈹? - Appium 闅忔瀯寤鸿嚜鍚紝缁撴潫鑷姩鍏抽棴      鈹?鈹?- /workspace = 椤圭洰鎸傝浇锛堝彧璇荤敤锛夆攤         鈹? - adb 鈫?USB 鐪熸満 619aae4              鈹?鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?        鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?```
 
-- 测试代码跑在 **Jenkins 容器** 里，不需要 Docker-in-Docker。
-- Windows 上 Appium 跑 **宿主机**；Linux 可选择跑容器（USB 直通）。
-- `RUN_ENV=docker` 会让 `driver_manager` 跳过容器内不可用的 adb 检查，并读取 `APPIUM_HOST`（见 `.env`）。
+- 鎺у埗鍣ㄥ彧璐熻矗璋冨害鍜屽睍绀猴紱**娴嬭瘯涓?Appium 閮借窇鍦ㄥ涓绘満**锛屽洜涓?Windows 涓婂鍣ㄦ棤娉曡闂?USB 璁惧銆?- `RUN_ENV=local`锛氭鏋跺湪 `pytest_sessionstart` 鍚姩 Appium锛坄appium.bind_host=0.0.0.0`锛夛紝`pytest_sessionfinish` 鍏抽棴骞舵潃杩涚▼鏍戙€?
+## 2. 鏂囦欢璇存槑
 
-## 2. 文件说明
-
-| 文件 | 说明 |
+| 鏂囦欢 | 璇存槑 |
 |---|---|
-| `docker/Dockerfile.jenkins` | 基于本机 `jenkins/jenkins:2.555.3-jdk21`，构建时下载 2.591 war 升级内核，装 Python venv + Allure + 82 个插件 |
-| `docker/Dockerfile.appium` | Appium 2 + UiAutomator2 + adb（仅 Linux USB 场景） |
-| `docker/plugins.txt` | 需要的插件名（输入） |
-| `docker/plugins.lock` | 依赖闭包结果（name/version/url），构建时用 curl 逐个下载 |
-| `docker/appium-entrypoint.sh` | 先起 adb server，再起 appium |
-| `docker/daemon.json` | Docker Hub 镜像加速示例 |
-| `docker-compose.yml` | Jenkins（+ 可选 appium）编排 |
-| `jenkins/casc.yaml` | JCasC：管理员、执行器、全局环境变量、Allure 工具 |
-| `jenkins/init/create-job.groovy` | 启动时创建/更新任务 `APP_UI_Test` 与 cron |
-| `jenkins/Jenkinsfile` | 流水线：准备 → 环境检查 → pytest → Allure/JUnit |
-| `.env.example` | 端口、密码、Appium 地址、通知 |
-| `.dockerignore` | 构建上下文只保留 requirements.txt 和 docker/（构建 1 分钟内完成） |
-| `scripts/build.ps1` / `build.sh` | 一键构建 + 启动 |
-| `scripts/start-appium-windows.ps1` | Windows 宿主机启动 Appium |
-| `scripts/gen_plugins_lock.py` | 改插件清单后重新生成 `plugins.lock` |
+| `docker/Dockerfile.jenkins` | 鎺у埗鍣ㄩ暅鍍忥紙Jenkins 2.591 + 闈㈡澘/鎻掍欢 + Allure锛?|
+| `docker/plugins.lock` / `plugins.txt` | 82 涓彃浠跺強渚濊禆闂寘锛堟瀯寤烘椂 curl 涓嬭浇锛?|
+| `docker-compose.yml` | 鎺у埗鍣ㄧ紪鎺掞紙8080銆佹暟鎹嵎銆丆asC 鎸傝浇锛?|
+| `jenkins/casc.yaml` | 绠＄悊鍛樸€佹墽琛屽櫒銆乣windows-host` 鑺傜偣銆丄llure 宸ュ叿璺緞 |
+| `jenkins/Jenkinsfile` | 娴佹按绾匡細鍑嗗 鈫?璁惧妫€鏌?鈫?pytest锛圥owerShell 姝ラ锛?|
+| `jenkins/init/create-job.groovy` | 鍚姩鏃跺垱寤轰换鍔?`APP_UI_Test` + cron `H 13 * * *` |
+| `scripts/jenkins-agent.ps1` | agent 瀹堟姢/鍚仠锛堣嚜鍔ㄩ噸杩烇級 |
+| `scripts/start-appium-windows.ps1` | 鎵嬪姩鍚姩 Appium锛堣皟璇曠敤锛?|
+| `scripts/gen_plugins_lock.py` | 鎻掍欢鍗囩骇鍚庨噸鏂扮敓鎴?lock |
 
-## 3. 日常使用
-
+## 3. 涓€娆℃€у噯澶?
 ```powershell
-# 构建 + 启动（已构建过则秒级）
+cd D:\DeepSeekTest\APP_UI_Test
+
+# 1) 鏋勫缓骞跺惎鍔ㄦ帶鍒跺櫒
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 
-# 宿主机启动 Appium（保持窗口）
-powershell -ExecutionPolicy Bypass -File scripts\start-appium-windows.ps1
+# 2) 鍚姩 agent锛堝凡娉ㄥ唽鐧诲綍鑷惎璁″垝浠诲姟 JenkinsAgent锛?powershell -ExecutionPolicy Bypass -File scripts\jenkins-agent.ps1 -Action status
+# 鑻ユ湭杩愯锛?powershell -ExecutionPolicy Bypass -File scripts\jenkins-agent.ps1 -Action start
 
-# 查看状态 / 日志
+# 3) 纭璁惧
+adb devices
+```
+
+agent 鐨勬帴鍏ュ瘑閽ヤ繚瀛樺湪 `C:\jenkins-agent\secret.txt`锛涜嫢鍦?Jenkins 閲屽垹鎺夊苟閲嶅缓浜嗚妭鐐癸紝闇€浠?`/computer/windows-host/jenkins-agent.jnlp` 閲嶆柊鑾峰彇骞惰鐩栬鏂囦欢锛屽啀閲嶅惎 agent銆?
+## 4. 鏃ュ父浣跨敤
+
+1. 鎵撳紑 <http://localhost:8080>锛宍admin` / `.env` 鐨?`JENKINS_ADMIN_PASSWORD`銆?2. 浠诲姟 `APP_UI_Test` 鈫?**Build with Parameters**锛?   - `TEST_MARKER`锛歚smoke` / `regression` / `p0`~`p3` / `all`
+   - `RERUNS`銆乣PYTEST_TIMEOUT`銆乣CLEAN_ARTIFACTS`
+3. 鐪嬬粨鏋滐細Console Output銆丄llure Report銆乀est Result銆丄rtifacts锛坄logs/*.log`銆乣reports/junit.xml`锛夈€?
+瀹氭椂锛氭瘡澶?13 鐐规。锛坄H 13 * * *`锛孉sia/Shanghai锛夛紝鍙傛暟鍙栦换鍔￠粯璁ゅ€笺€?
+## 5. Appium 鐢熷懡鍛ㄦ湡
+
+| 鏃舵満 | 琛屼负 |
+|---|---|
+| 鏋勫缓寮€濮嬶紙sessionstart锛?| `autostart: true` 鈫?鍚姩 `appium --address 0.0.0.0 --port 4723`锛岃疆璇?`/status` 鏈€澶?60s |
+| 鏋勫缓缁撴潫锛坰essionfinish锛?| 鍋滄鏈繘绋嬪惎鍔ㄧ殑 Appium锛屽苟鏉€鎺?`node` 瀛愯繘绋?|
+| 鍚姩澶辫触 | 鐩存帴 `pytest.exit`锛屾瀯寤哄揩閫熷け璐ワ紙涓嶄細璺戜竴鍗婏級 |
+
+鐩稿叧閰嶇疆鍦?`config/config.yaml`锛?
+```yaml
+appium:
+  autostart: true
+  bind_host: "0.0.0.0"
+  startup_timeout: 60          # 鍙敤鐜鍙橀噺 APPIUM_STARTUP_TIMEOUT 瑕嗙洊
+  log_file: "./logs/appium.log"
+```
+
+## 6. 鏀瑰摢閲屻€佹€庝箞鐢熸晥
+
+| 鏀瑰姩 | 鐢熸晥鏂瑰紡 |
+|---|---|
+| 娴嬭瘯浠ｇ爜 / `config/` | 涓嬫鏋勫缓鍗冲彲锛坅gent 鐩存帴鐢ㄩ」鐩洰褰曪級 |
+| `jenkins/Jenkinsfile` | `docker compose restart jenkins`锛堣剼鏈湪鍚姩鏃舵敞鍏ヤ换鍔★級 |
+| `jenkins/casc.yaml` | `docker compose restart jenkins` |
+| `scripts/jenkins-agent.ps1` | `-Action stop` 鍐?`-Action start` |
+| 鎻掍欢 | 鏀?`docker/plugins.txt` 鈫?`python scripts/gen_plugins_lock.py` 鈫?`docker compose build` |
+| 绔彛 / 鎸傝浇 | 鏀?`docker-compose.yml` 鈫?`docker compose up -d --force-recreate jenkins` |
+
+## 7. 鎺掗敊
+
+| 鐜拌薄 | 澶勭悊 |
+|---|---|
+| 鏋勫缓涓€鐩存帓闃?/ 鎶ユ病鏈?`windows-host` 鎵ц鍣?| agent 鎺夌嚎锛歚scripts\jenkins-agent.ps1 -Action status`锛岀湅 `logs/jenkins-agent.log`銆乣C:\jenkins-agent\agent.log` |
+| `Authentication failed` / secret 閿欒 | 閲嶆柊鑾峰彇 secret 鍐欏叆 `C:\jenkins-agent\secret.txt`锛岄噸鍚?agent |
+| `娌℃湁鍙敤璁惧` | `adb devices` 涓虹┖鎴栨湭鎺堟潈锛涙彃绾垮悗鎵嬫満鐐光€滃厑璁?USB 璋冭瘯鈥?|
+| `Appium鏈嶅姟鍚姩澶辫触` | 鐪?`logs/appium.log`锛涚‘璁?4723 鏈鍗犵敤銆乣appium` 涓?`uiautomator2` 宸插畨瑁?|
+| 鏋勫缓閫氳繃浣?Appium 娌″叧 | 妫€鏌?`logs/appium.log` 灏鹃儴鏄惁琚仠姝紱纭娌℃湁澶栭儴鍚姩鐨?Appium 鍗犵敤 4723 |
+| Allure 鎶ュ憡绌虹櫧 | 纭 `D:\allure-2.32.2\bin\allure.bat` 瀛樺湪锛坈asC 鐨?`tool.allure.home`锛?|
+| 8080 琚崰 | 鏀?`.env` 鐨?`JENKINS_HTTP_PORT` |
+
+## 8. 甯哥敤鍛戒护
+
+```powershell
 docker compose ps
 docker logs -f app-ui-jenkins
-
-# 停止 / 彻底重置（含 Jenkins 数据）
-docker compose down
-docker compose down -v
+docker compose restart jenkins
+docker compose down            # 淇濈暀鏁版嵁鍗?docker compose down -v         # 杩炴暟鎹嵎涓€璧峰垹锛堜换鍔′細鐢?init 鑴氭湰閲嶅缓锛?
+powershell -ExecutionPolicy Bypass -File scripts\jenkins-agent.ps1 -Action status
+powershell -ExecutionPolicy Bypass -File scripts\jenkins-agent.ps1 -Action stop
+schtasks /Run /TN JenkinsAgent
 ```
-
-Jenkins：<http://localhost:8080>，账号 `admin`，密码见 `.env`（默认 `ChangeMe_123`，务必修改）。
-
-## 4. 定时与参数
-
-- 任务 `APP_UI_Test` 由 `jenkins/init/create-job.groovy` 在启动时创建。
-- 默认 cron：`H 13 * * *`（每天 13 点档，容器时区 `Asia/Shanghai`）。
-- **改 cron**：编辑 `jenkins/init/create-job.groovy` → `docker compose restart jenkins`（启动脚本会重写任务）。
-- **改流水线**：编辑 `jenkins/Jenkinsfile` → `docker compose restart jenkins`（脚本内容在启动时写入任务）。
-- 运行参数：`TEST_MARKER`（smoke/regression/p0..p3/all）、`RERUNS`、`PYTEST_TIMEOUT`、`CLEAN_ARTIFACTS`。
-- 报告：`BUILD_URL/allure/`（Allure 插件），JUnit 在 `reports/junit.xml`，产物归档在 `/workspace`。
-
-## 5. Linux 全容器（USB 直通）
-
-```bash
-adb kill-server                 # 宿主机先释放 USB
-bash scripts/build.sh appium    # 同时构建 appium 容器
-# 把 .env 里的 APPIUM_HOST 改成 http://appium:4723 后
-docker compose up -d
-```
-
-要求：Linux 宿主机、`/dev/bus/usb` 可访问、容器 `privileged`。
-
-## 6. 国内镜像与构建策略
-
-| 环节 | 来源 | 位置 |
-|---|---|---|
-| Debian apt | 清华 TUNA | 两个 Dockerfile |
-| pip | 清华 PyPI | Dockerfile.jenkins |
-| npm | npmmirror | Dockerfile.appium、Windows 脚本 |
-| Jenkins 内核 war | 华为云 `jenkins/war/2.591/jenkins.war` | Dockerfile.jenkins |
-| Jenkins 插件 | 华为云镜像（`plugins.lock` 记录 URL，curl 下载） | Dockerfile.jenkins |
-| Allure CLI | 阿里云 Maven（回退 Maven Central） | Dockerfile.jenkins |
-| Docker Hub | daemon.json 的 registry-mirrors | Docker 引擎配置 |
-
-**为什么不用 `jenkins-plugin-cli`**：在本机网络下它把镜像返回的 hpi 判为 invalid ZIP，并回退到不可达的 `archives.jenkins.io`。改为先用 `scripts/gen_plugins_lock.py` 在宿主机解析依赖、生成 lock，构建时用 curl 直接下载，稳定且可复现。
-
-**为什么升级内核**：基础镜像 2.555.3 低于当前插件的 `requiredCore`（2.589），构建时下载 2.591 war 覆盖 `/usr/share/jenkins/jenkins.war`。
-
-**Python 3.13 兼容**：基础镜像是 Debian 13（Python 3.13），`requirements.txt` 已锁定 `psutil==7.2.2`、`PyYAML==6.0.2`（均提供 cp313 wheel），构建时不再改写版本。
-
-## 7. 与项目代码的适配点
-
-1. **不调用 `run_tests.py`**：其 `--reruns/--maxfail/--timeout/--parallel` 未真正传给 pytest；流水线直接调 `python -m pytest`。
-2. **`customWorkspace '/workspace'`**：项目依赖 `config/config.yaml` 等相对路径，必须在项目根目录运行。
-3. **`RUN_ENV=docker`**：跳过 adb 检查，改用 `APPIUM_HOST`；Appium 需带 `--allow-insecure uiautomator2:adb_shell`。
-4. **Allure 结果目录**统一为 `reports/allure-results`，与 `pytest.ini` 一致。
-5. **Appium 等待 / 自启**：`pytest_sessionstart` 在本地按 `appium.autostart` 拉起 Appium（默认绑 `0.0.0.0`，日志写到 `logs/appium.log`），Docker 环境只等待 `APPIUM_HOST` 就绪；超时由 `appium.startup_timeout`（可用 `APPIUM_STARTUP_TIMEOUT` 覆盖）控制，超时直接 `pytest.exit`，不会跑一半才失败。
-
-## 8. 排错
-
-| 现象 | 处理 |
-|---|---|
-| 构建报 `Appium 不可达` | 宿主机 Appium 未启动或 4723 未监听；`curl http://127.0.0.1:4723/status` 自查 |
-| 构建报 `Could not find a connected Android device` | 设备未连接：改 `config/device_config.yaml` 的 `udid`，或连上真机后 `adb devices` 确认 |
-| 8080 被占用 | 改 `.env` 的 `JENKINS_HTTP_PORT` |
-| 改了 Jenkinsfile / cron 没生效 | `docker compose restart jenkins`（内容在启动时注入任务） |
-| 插件要升级 | 改 `docker/plugins.txt` → `python scripts/gen_plugins_lock.py` → `docker compose build` |
-| 任务没创建 | 看 `docker logs app-ui-jenkins | grep "\[init\]"` |
-| Linux 下 reports 属 root | `sudo chown -R $USER reports logs screenshots allure-report` |

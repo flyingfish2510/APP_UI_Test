@@ -1,12 +1,10 @@
-// APP_UI_Test 定时回归流水线（Jenkins in Docker + Appium）
-// 定时触发由 jenkins/init/create-job.groovy 在 Jenkins 启动时注入（TimerTrigger），
-// 此处不再声明 triggers，避免重复触发。
+// APP_UI_Test 定时回归流水线（Jenkins 控制器在 Docker，测试跑在 Windows 宿主机 agent）
+// 定时触发由 jenkins/init/create-job.groovy 在 Jenkins 启动时注入（TimerTrigger）。
 pipeline {
     agent {
         node {
-            // 关键：直接使用挂载进容器的项目目录，规避项目对 CWD 的依赖
-            label 'built-in'
-            customWorkspace '/workspace'
+            label 'windows-host'
+            customWorkspace 'D:\\DeepSeekTest\\APP_UI_Test'
         }
     }
 
@@ -29,8 +27,8 @@ pipeline {
 
     environment {
         TZ               = 'Asia/Shanghai'
-        RUN_ENV          = 'docker'
-        PYTHON           = '/opt/venv/bin/python'
+        RUN_ENV          = 'local'
+        PYTHON           = 'D:\\DeepSeekTest\\APP_UI_Test\\.venv\\Scripts\\python.exe'
         PYTHONIOENCODING = 'utf-8'
     }
 
@@ -39,30 +37,36 @@ pipeline {
             steps {
                 script {
                     def clean = (params.CLEAN_ARTIFACTS == null) ? true : params.CLEAN_ARTIFACTS
-                    sh """
-                        set -eu
-                        test -f pytest.ini          || { echo '缺少 pytest.ini，工作区: '\$(pwd); exit 1; }
-                        test -f config/config.yaml  || { echo '缺少 config/config.yaml'; exit 1; }
-                        mkdir -p reports logs screenshots
-                        if [ '${clean}' = 'true' ]; then
-                            rm -rf reports/allure-results reports/allure-report reports/junit.xml
-                            find screenshots -type f -name '*.png' -mtime +7 -delete 2>/dev/null || true
-                        fi
-                    """
-                    echo "Python: ${sh(script: "${PYTHON} --version", returnStdout: true).trim()}"
+                    withEnv(["CLEAN_ARTIFACTS_ARG=${clean}"]) {
+                        powershell '''
+                            if (-not (Test-Path pytest.ini)) { Write-Error '缺少 pytest.ini'; exit 1 }
+                            if (-not (Test-Path 'config/config.yaml')) { Write-Error '缺少 config/config.yaml'; exit 1 }
+                            New-Item -ItemType Directory -Force -Path reports, logs, screenshots | Out-Null
+                            if ($env:CLEAN_ARTIFACTS_ARG -eq 'true') {
+                                Remove-Item -Recurse -Force reports/allure-results, reports/allure-report, reports/junit.xml -ErrorAction SilentlyContinue
+                                Get-ChildItem screenshots -Filter *.png -File -ErrorAction SilentlyContinue |
+                                    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+                                    Remove-Item -Force -ErrorAction SilentlyContinue
+                            }
+                        '''
+                    }
+                    def ver = powershell(script: '& $env:PYTHON --version', returnStdout: true).trim()
+                    echo "Python: ${ver}"
                 }
             }
         }
 
         stage('环境检查') {
             steps {
-                sh '''
-                    set -eu
-                    APPIUM_URL="${APPIUM_HOST:-http://host.docker.internal:4723}"
-                    echo "Appium: ${APPIUM_URL}"
-                    curl -fsS --max-time 8 "${APPIUM_URL}/status" > /dev/null \
-                        || { echo "Appium 不可达：${APPIUM_URL}（Windows 请先在宿主机启动 Appium）"; exit 1; }
-                    "${PYTHON}" -c "import sys, pytest, selenium; print(sys.version.split()[0], '| selenium', selenium.__version__, '| pytest', pytest.__version__)"
+                powershell '''
+                    & adb version | Select-Object -First 1
+                    $devices = & adb devices
+                    $devices
+                    if (-not ($devices -match "\tdevice")) {
+                        Write-Error '没有可用设备（adb devices 为空或未授权）'
+                        exit 1
+                    }
+                    & $env:PYTHON -c "import sys, pytest, selenium; print(sys.version.split()[0], '| selenium', selenium.__version__, '| pytest', pytest.__version__)"
                 '''
             }
         }
@@ -70,25 +74,28 @@ pipeline {
         stage('执行测试') {
             steps {
                 script {
-                    def marker    = (params.TEST_MARKER ?: 'all').toString().trim()
-                    def reruns    = (params.RERUNS ?: '0').toString().trim()
-                    def tmo       = (params.PYTEST_TIMEOUT ?: '300').toString().trim()
-                    def markerArg = (marker == 'all') ? '' : "-m ${marker}"
-                    def cmd = """
-                        set -o pipefail
-                        ${PYTHON} -m pytest testcases/ \
-                            ${markerArg} \
-                            --alluredir=reports/allure-results \
-                            --clean-alluredir \
-                            --junitxml=reports/junit.xml \
-                            --timeout=${tmo} \
-                            --reruns ${reruns} --reruns-delay 3 \
-                            --maxfail=0 \
-                            -p no:cacheprovider \
-                            --tb=short --disable-warnings -q
-                    """
-                    echo cmd
-                    sh cmd
+                    def marker = (params.TEST_MARKER ?: 'all').toString().trim()
+                    def reruns = (params.RERUNS ?: '0').toString().trim()
+                    def tmo    = (params.PYTEST_TIMEOUT ?: '300').toString().trim()
+                    withEnv(["MARKER_ARG=${marker}", "RERUNS_ARG=${reruns}", "TMO_ARG=${tmo}"]) {
+                        powershell '''
+                            $pytestArgs = @('-m', 'pytest', 'testcases/')
+                            if ($env:MARKER_ARG -ne 'all') { $pytestArgs += @('-m', $env:MARKER_ARG) }
+                            $pytestArgs += @(
+                                '--alluredir=reports/allure-results',
+                                '--clean-alluredir',
+                                '--junitxml=reports/junit.xml',
+                                "--timeout=$($env:TMO_ARG)",
+                                '--reruns', $env:RERUNS_ARG, '--reruns-delay', '3',
+                                '--maxfail=0',
+                                '-p', 'no:cacheprovider',
+                                '--tb=short', '--disable-warnings', '-q'
+                            )
+                            Write-Host ($env:PYTHON + ' ' + ($pytestArgs -join ' '))
+                            & $env:PYTHON @pytestArgs
+                            exit $LASTEXITCODE
+                        '''
+                    }
                 }
             }
         }

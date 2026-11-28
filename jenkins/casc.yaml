@@ -1,5 +1,5 @@
 jenkins:
-  systemMessage: "APP_UI_Test 定时回归（Docker / Asia/Shanghai）"
+  systemMessage: "APP_UI_Test 定时回归（Jenkins 控制器 + Windows 宿主机 agent）"
   numExecutors: 2
   mode: NORMAL
   scmCheckoutRetryCount: 2
@@ -18,21 +18,35 @@ jenkins:
   globalNodeProperties:
     - envVars:
         env:
-          - key: "APPIUM_HOST"
-            value: "${APPIUM_HOST:-http://host.docker.internal:4723}"
           - key: "MAIL_TO"
             value: "${MAIL_TO:-}"
+  nodes:
+    - permanent:
+        name: "windows-host"
+        remoteFS: "C:\\jenkins-agent"
+        numExecutors: 1
+        labelString: "windows-host"
+        mode: NORMAL
+        retentionStrategy: "always"
+        launcher:
+          inbound:
+            workDirSettings:
+              disabled: false
+              failIfWorkDirIsMissing: false
+              internalDir: "remoting"
 
 unclassified:
   location:
     url: "${JENKINS_URL:-http://localhost:8080/}"
+  # Windows agent 上用 Git Bash 执行 sh 步骤
+  shell:
+    shell: "C:\\Program Files\\Git\\bin\\bash.exe"
 
-# Allure 插件使用的命令行（镜像内已装到 /opt/allure）
+# Allure 命令行在宿主机 agent 上的路径
 tool:
   allure:
     installations:
       - name: "allure"
-        home: "/opt/allure"
+        home: "D:\\allure-2.32.2"
 
 # 说明：定时任务由 jenkins/init/create-job.groovy 在启动时创建
-# （CasC 的 jobs 功能需要 workspace，容器内不可用）
