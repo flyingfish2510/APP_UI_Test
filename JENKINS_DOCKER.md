@@ -102,6 +102,7 @@ docker compose up -d
 2. **`customWorkspace '/workspace'`**：项目依赖 `config/config.yaml` 等相对路径，必须在项目根目录运行。
 3. **`RUN_ENV=docker`**：跳过 adb 检查，改用 `APPIUM_HOST`；Appium 需带 `--allow-insecure uiautomator2:adb_shell`。
 4. **Allure 结果目录**统一为 `reports/allure-results`，与 `pytest.ini` 一致。
+5. **Appium 等待 / 自启**：`pytest_sessionstart` 在本地按 `appium.autostart` 拉起 Appium（默认绑 `0.0.0.0`，日志写到 `logs/appium.log`），Docker 环境只等待 `APPIUM_HOST` 就绪；超时由 `appium.startup_timeout`（可用 `APPIUM_STARTUP_TIMEOUT` 覆盖）控制，超时直接 `pytest.exit`，不会跑一半才失败。
 
 ## 8. 排错
 

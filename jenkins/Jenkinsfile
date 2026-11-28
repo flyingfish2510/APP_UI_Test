@@ -1,5 +1,6 @@
 // APP_UI_Test 定时回归流水线（Jenkins in Docker + Appium）
-// 定时触发在 jenkins/jobs.groovy 中定义，此处不再声明 triggers，避免重复触发。
+// 定时触发由 jenkins/init/create-job.groovy 在 Jenkins 启动时注入（TimerTrigger），
+// 此处不再声明 triggers，避免重复触发。
 pipeline {
     agent {
         node {
