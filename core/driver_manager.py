@@ -7,6 +7,7 @@ Appium Driver管理器（集成自定义异常版本）
 import os
 import time
 import yaml
+import psutil
 import subprocess
 from typing import Dict, Optional, List
 import allure
@@ -48,6 +49,19 @@ class DriverManager:
         self.active_drivers: List[str] = []
         self.run_env = self._get_run_environment()
         logger.info(f"当前运行环境: {self.run_env}")
+
+        appium_config = self.config.get('appium', {})
+        self.appium_autostart = bool(appium_config.get('autostart', True))
+        self.appium_bind_host = str(appium_config.get('bind_host', '0.0.0.0'))
+        try:
+            self.appium_startup_timeout = int(
+                os.getenv('APPIUM_STARTUP_TIMEOUT') or appium_config.get('startup_timeout', 60)
+            )
+        except (TypeError, ValueError):
+            logger.warning("appium.startup_timeout 配置非法，回退为 60s")
+            self.appium_startup_timeout = 60
+        self.appium_log_file = str(appium_config.get('log_file', './logs/appium.log'))
+        self._appium_log_handle = None
         self._validate_device_config()
 
     @staticmethod
@@ -220,67 +234,96 @@ class DriverManager:
 
     @allure.step("启动Appium服务")
     def start_appium_service(self):
-        """启动 Appium 服务（仅本地环境）"""
+        """启动 Appium 服务。
+
+        本地环境按 `appium.autostart` 决定是否拉起进程；Docker 环境只等待
+        外部 Appium 就绪（容器内无法启动宿主机的 Appium）。
+        """
         if self.run_env == 'docker':
-            self.wait_for_appium_ready()
-            return
+            return self.wait_for_appium_ready()
 
-        import requests
-
-        host, port = self._get_appium_host_port()
+        _, port = self._get_appium_host_port()
         appium_config = self.config.get('appium', {})
         allow_insecure = appium_config.get('allow_insecure', 'uiautomator2:adb_shell')
+        bind_host = self.appium_bind_host or '0.0.0.0'
+        service_url = f'http://{bind_host}:{port}'
+
+        log_dir = os.path.dirname(os.path.abspath(self.appium_log_file))
+        os.makedirs(log_dir, exist_ok=True)
 
         try:
-            logger.info(f"正在启动Appium服务... (host={host}, port={port})")
-            cmd = f'appium --address {host} --port {port} --allow-insecure {allow_insecure}'
+            logger.info(f"正在启动Appium服务... ({bind_host}:{port})")
+            cmd = f'appium --address {bind_host} --port {port} --allow-insecure {allow_insecure}'
+            # 日志落盘，便于排查 Appium 启动失败原因
+            self._appium_log_handle = open(self.appium_log_file, 'ab')
             self.appium_process = subprocess.Popen(
                 cmd, shell=True,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=self._appium_log_handle, stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
-
-            status_url = f'http://{host}:{port}/status'
-            max_retries = 30
-            for i in range(max_retries):
-                try:
-                    response = requests.get(status_url, timeout=1)
-                    if response.status_code == 200:
-                        logger.info("Appium服务已启动")
-                        return
-                except requests.ConnectionError:
-                    pass
-                time.sleep(2)
-            raise AppiumServiceStartError(service_url=status_url, reason="服务启动超时")
+            self.wait_for_appium_ready(self.appium_startup_timeout)
+            logger.info(f"Appium服务已启动，日志: {self.appium_log_file}")
+        except AppiumConnectionError as e:
+            self.stop_appium_service()
+            raise AppiumServiceStartError(service_url=service_url, reason=str(e)) from e
         except AppiumServiceStartError:
+            self.stop_appium_service()
             raise
         except Exception as e:
-            raise AppiumServiceStartError(service_url=f'http://{host}:{port}', reason=str(e)) from e
+            self.stop_appium_service()
+            raise AppiumServiceStartError(service_url=service_url, reason=str(e)) from e
 
-    def wait_for_appium_ready(self):
-        """等待 Appium 服务就绪（Docker 环境）"""
+    def wait_for_appium_ready(self, timeout: int = None) -> bool:
+        """等待 Appium 就绪（本地 / Docker 通用），超时抛 AppiumConnectionError。"""
         import requests
+
+        timeout = timeout or self.appium_startup_timeout
         appium_url = self._get_appium_url()
-        for i in range(30):
+        deadline = time.time() + timeout
+        logger.info(f"等待 Appium 就绪: {appium_url}（最多 {timeout}s）")
+
+        while time.time() < deadline:
             try:
-                response = requests.get(f"{appium_url}/status", timeout=2)
-                if response.status_code == 200:
+                if requests.get(f"{appium_url}/status", timeout=2).status_code == 200:
                     logger.info(f"Appium服务已就绪: {appium_url}")
                     return True
             except requests.ConnectionError:
                 pass
             time.sleep(2)
-        raise AppiumConnectionError(service_url=appium_url, reason="Appium服务未就绪")
+
+        raise AppiumConnectionError(
+            service_url=appium_url,
+            reason=f"{timeout}s 内未就绪，请确认 Appium 已启动且地址可访问"
+        )
 
     @allure.step("停止Appium服务")
     def stop_appium_service(self):
-        """停止 Appium 服务"""
-        if self.appium_process:
+        """停止本进程启动的 Appium（含子进程）；外部启动的 Appium 不受影响。"""
+        proc = self.appium_process
+        if proc is not None:
             try:
-                self.appium_process.terminate()
+                parent = psutil.Process(proc.pid)
+                children = parent.children(recursive=True)
+                for child in children:
+                    child.terminate()
+                parent.terminate()
+                _, alive = psutil.wait_procs([parent, *children], timeout=5)
+                for p in alive:
+                    p.kill()
                 logger.info("Appium服务已停止")
+            except psutil.NoSuchProcess:
+                logger.info("Appium进程已退出")
             except Exception as e:
                 logger.error(f"停止Appium服务失败: {e}")
+            finally:
+                self.appium_process = None
+
+        if self._appium_log_handle:
+            try:
+                self._appium_log_handle.close()
+            except Exception:
+                pass
+            self._appium_log_handle = None
 
     @allure.step("创建Driver (设备索引: {device_index})")
     def create_driver(self, device_index: int = 0) -> webdriver.Remote:

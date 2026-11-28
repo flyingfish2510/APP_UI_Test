@@ -264,12 +264,15 @@ def pytest_sessionstart(session):
     # 4. 恢复历史趋势数据
     _restore_history(allure_dir)
 
-    if driver_manager.run_env == 'local':
-        try:
+    try:
+        if driver_manager.run_env == 'local' and driver_manager.appium_autostart:
             driver_manager.start_appium_service()
-        except (AppiumServiceStartError, AppiumConnectionError) as e:
-            logger.error(f"启动Appium服务失败: {e}")
-            pytest.exit(str(e))
+        else:
+            # Docker 环境（或本地关闭自启时）：只等待外部 Appium 就绪，不拉起进程
+            driver_manager.wait_for_appium_ready()
+    except (AppiumServiceStartError, AppiumConnectionError) as e:
+        logger.error(f"Appium不可用: {e}")
+        pytest.exit(str(e))
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -286,8 +289,8 @@ def pytest_sessionfinish(session, exitstatus):
     logger.info("=" * 60)
 
     driver_manager.quit_all_drivers()
-    if driver_manager.run_env == 'local':
-        driver_manager.stop_appium_service()
+    # 只关闭本进程启动的 Appium（外部常驻的不受影响）
+    driver_manager.stop_appium_service()
     global_exception_handler.clear_history()
 
 

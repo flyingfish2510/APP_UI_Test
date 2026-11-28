@@ -12,6 +12,14 @@ appium:
   command_timeout: 60
   session_override: true
   allow_insecure: "uiautomator2:adb_shell"
+  # 本地是否自动拉起 Appium（Docker 环境始终只等待外部服务，不启动）
+  autostart: true
+  # Appium 监听地址；0.0.0.0 允许 Jenkins 容器通过 host.docker.internal 访问
+  bind_host: "0.0.0.0"
+  # 启动/等待就绪超时（秒），可用环境变量 APPIUM_STARTUP_TIMEOUT 覆盖
+  startup_timeout: 60
+  # Appium 控制台日志落盘路径
+  log_file: "./logs/appium.log"
 
 # --------------------------------------------------------------------------
 # 2. 应用配置
